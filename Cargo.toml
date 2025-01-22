@@ -3,10 +3,6 @@ name = "yourcraft"
 version = "0.1.0"
 edition = "2021"
 
-[[bin]]
-name = "server"
-path = "src/server/main.rs"
-
 [dependencies]
 log = "0.4.25"
 env_logger = "0.11.6"

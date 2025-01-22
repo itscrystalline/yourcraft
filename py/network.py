@@ -1,4 +1,5 @@
 import pickle
+import random
 import socket
 
 from time import sleep, time
@@ -18,14 +19,28 @@ class HelloPacket(Packet):
         super().__init__(0)
         self.timestamp = int(time() * 1000)
 
-ip_port = ("127.0.0.1", 8475)
-buf_size = 1024
+class PlayerCoordinates(Packet):
+    def __init__(self, x, y):
+        super().__init__(1)
+        self.x = x
+        self.y = y
 
-# sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+class Connection:
+    def __init__(self, ip: str, port: int):
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.ip_port = (ip, port)
 
-# while True:
-#     pkt = HelloPacket()
-#
-#     sock.sendto(pkt.serialize(), ip_port)
-#
-#     sleep(1)
+    def send(self, packet: Packet):
+        self.socket.sendto(packet.serialize(), self.ip_port)
+
+if __name__ == "__main__":
+    type = int(input("test type:"))
+    conn = Connection("127.0.0.1", 8475)
+
+    while True:
+        if type == 0:
+            conn.send(HelloPacket())
+        elif type == 1:
+            conn.send(PlayerCoordinates(random.randint(-100, 100), random.randint(-100, 100)))
+
+        sleep(1)
