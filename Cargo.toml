@@ -3,4 +3,14 @@ name = "yourcraft"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "server"
+path = "src/server/main.rs"
+
+[[bin]]
+name = "client"
+path = "src/client/wrapper.rs"
+
 [dependencies]
+include_dir = "0.7.4"
+pyo3 = "0.23.4"
