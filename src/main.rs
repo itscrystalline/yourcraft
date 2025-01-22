@@ -19,8 +19,8 @@ async fn main() -> io::Result<()> {
     info!("Listening on {}", socket.local_addr()?);
     let mut buf = [0; 1024];
     loop {
-        let (len, addr) = socket.recv_from(&mut buf).await?;
-        info!("{:?} bytes received from {:?}", len, addr);
+        let (len, client_addr) = socket.recv_from(&mut buf).await?;
+        info!("{:?} bytes received from {:?}", len, client_addr);
         
         let packet: Packet = from_slice(&buf[..len], DeOptions::new()).unwrap();
         
