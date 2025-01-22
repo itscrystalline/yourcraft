@@ -18,7 +18,7 @@ class Packet:
         d.pop("t")
         return d
 class Connection:
-    def __init__(self, ip: str, port: int):
+    def __init__(self, ip: str, port: int = 8475):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.ip_port = (ip, port)
     def send(self, packet: Packet):
@@ -38,7 +38,7 @@ class PlayerCoordinates(Packet):
 
 if __name__ == "__main__":
     type = int(input("test type:"))
-    conn = Connection("127.0.0.1", 8475)
+    conn = Connection("127.0.0.1")
 
     while True:
         if type == 0:
