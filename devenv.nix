@@ -1,11 +1,12 @@
 { pkgs, lib, config, inputs, ... }:
 
 {
-
   cachix.enable = false;
 
+  env.LD_LIBRARY_PATH = "${pkgs.libglvnd}/lib";
+
   # https://devenv.sh/packages/
-  packages = [ pkgs.git ];
+  packages = [ pkgs.git pkgs.xorg.libX11 ];
 
   # https://devenv.sh/languages/
   languages.rust = {
@@ -19,9 +20,4 @@
     venv.enable = true;
     venv.requirements = builtins.readFile ./requirements.txt;
   };
-
-  # https://devenv.sh/processes/
-  # processes.cargo-watch.exec = "cargo-watch";
-
-  # https://devenv.sh/service
 }
