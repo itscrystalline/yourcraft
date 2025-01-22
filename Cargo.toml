@@ -10,3 +10,7 @@ path = "src/server/main.rs"
 [dependencies]
 log = "0.4.25"
 env_logger = "0.11.6"
+serde = { version = "1.0.217", features = ["derive"] }
+serde-pickle = "1.2.0"
+serde_bytes = "0.11.15"
+tokio = { version = "1.43.0", features = ["rt", "rt-multi-thread", "macros", "net", "sync"] }
