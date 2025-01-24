@@ -3,9 +3,11 @@ use std::{io, net::SocketAddr, sync::Arc};
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use serde_pickle::{from_iter, from_slice, DeOptions};
-use crate::network::{HelloPacket, Packet, PacketTypes, PlayerCoordinates};
+use crate::network::{ClientHello, Packet, PacketTypes, ServerSync};
+use crate::world::{Block, World};
 
 mod network;
+mod world;
 
 macro_rules! unwrap_packet {
     ($packet: expr) => {from_slice(&$packet.data, DeOptions::new()).unwrap()};
@@ -14,6 +16,11 @@ macro_rules! unwrap_packet {
 #[tokio::main]
 async fn main() -> io::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
+    
+    let mut world = World::generate_empty(8, 8, 2).unwrap();
+    debug!("generated world: {:?}", world);
+    world.set_block(3, 2, Block::Grass).unwrap();
+    debug!("changed world: {:?}", world);
     
     let socket = UdpSocket::bind("0.0.0.0:8475").await?;
     info!("Listening on {}", socket.local_addr()?);
@@ -25,14 +32,14 @@ async fn main() -> io::Result<()> {
         let packet: Packet = from_slice(&buf[..len], DeOptions::new()).unwrap();
         
         match packet.t.into() {
-            PacketTypes::HelloPacket => {
-                let hello_packet: HelloPacket = unwrap_packet!(packet);
+            PacketTypes::ClientHello => {
+                let hello_packet: ClientHello = unwrap_packet!(packet);
                 debug!("{:?}", hello_packet);
-            },
-            PacketTypes::PlayerCoordinates => {
-                let player_coords: PlayerCoordinates = unwrap_packet!(packet);
+            }
+            PacketTypes::ServerSync => {
+                let player_coords: ServerSync = unwrap_packet!(packet);
                 debug!("{:?}", player_coords);
-            },
+            }
             PacketTypes::Invalid => error!("unknown packet: {:?}", packet),
         }
     }

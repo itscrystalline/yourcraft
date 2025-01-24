@@ -49,10 +49,10 @@ macro_rules! define_packets {
 
 // Use the macro to define packets
 define_packets!(
-    HelloPacket = 1 => HelloPacket {
+    ClientHello = 1 => ClientHello {
         timestamp: u64
     },
-    PlayerCoordinates = 2 => PlayerCoordinates {
+    ServerSync = 2 => ServerSync {
         x: i32,
         y: i32
     }
