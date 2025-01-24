@@ -25,10 +25,10 @@ class Connection:
         self.socket.sendto(packet.serialize(), self.ip_port)
 
 
-class HelloPacket(Packet):
-    def __init__(self, timestamp):
+class Hello(Packet):
+    def __init__(self, username):
         super().__init__(HELLO)
-        self.timestamp = timestamp
+        self.username = username
 
 class PlayerCoordinates(Packet):
     def __init__(self, x, y):
@@ -42,7 +42,7 @@ if __name__ == "__main__":
 
     while True:
         if type == 0:
-            conn.send(HelloPacket(int(time() * 1000)))
+            conn.send(Hello(int(time() * 1000)))
         elif type == 1:
             conn.send(PlayerCoordinates(random.randint(-100, 100), random.randint(-100, 100)))
 
