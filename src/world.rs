@@ -1,4 +1,5 @@
 use log::debug;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 pub enum WorldError {
@@ -17,7 +18,7 @@ pub struct World {
     pub chunks: Vec<Chunk>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Chunk {
     pub size: u32,
     pub chunk_x: u32,
@@ -27,7 +28,7 @@ pub struct Chunk {
 
 macro_rules! define_blocks {
     ($($name:ident = $id:expr),* $(,)?) => {
-        #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
         pub enum Block {
             $($name = $id),*
         }

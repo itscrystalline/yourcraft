@@ -27,20 +27,20 @@ The client **must** request the server to load/unload chunks. the server **will 
 ```
 0: Invalid Packet.
 1: [C2S] ClientHello (name: str)
-2: [S2C] ServerSync (player_id: int, world_size: (int, int), chunk_size: int)
-3: [C2S] ClientRequestChunk (chunk_coords: (int_int))
-4: [S2C] ServerChunkResponse (chunk: list of Block Enums as ints)
-5: [C2S] ClientUnloadChunk (chunk_coords: (int_int))
-6: [S2C] ServerPlayerJoin (name: str, id: int)
-7: [S2C] ServerPlayerEnterLoaded (name: str, id: int)
-8: [S2C] ServerPlayerLeaveLoaded (name: str, id: int)
-9: [S2C] ServerPlayerLeave (name: str, id: int)
+2: [S2C] ServerSync (player_id: int, world_width: int, world_height: int, chunk_size: int)
+3: [C2S] ClientRequestChunk (chunk_coords_x: int, chunk_coords_y: int)
+4: [S2C] ServerChunkResponse (chunk: Chunk, see world.rs for impl)
+5: [C2S] ClientUnloadChunk (chunk_coords_x: int, chunk_coords_y: int)
+6: [S2C] ServerPlayerJoin (player_name: str, player_id: int)
+7: [S2C] ServerPlayerEnterLoaded (player_name: str, player_id: int)
+8: [S2C] ServerPlayerLeaveLoaded (player_name: str, player_id: int)
+9: [S2C] ServerPlayerLeave (player_name: str, player_id: int)
 10: [C2S] ClientGoodbye ()
-11: [C2S] ClientPlaceBlock (block: Block Enum as int, coords: (int, int))
-12: [S2C] ServerUpdateBlock (block: Block Enum as int, coords: (int, int))
-13: [C2S] ClientPlayerMoveX (pos_x: int)
+11: [C2S] ClientPlaceBlock (block: Block Enum as int, x: int, y: int)
+12: [S2C] ServerUpdateBlock (block: Block Enum as int, x: int, y: int)
+13: [C2S] ClientPlayerMoveX (pos_x: float)
 13: [C2S] ClientPlayerJump ()
-14: [S2C] ServerPlayerUpdatePos (player_id: int, pos: (int, int))
+14: [S2C] ServerPlayerUpdatePos (player_id: int, pos_x: float, pos_y: float)
 ```
 
 ### Lifecycle Overview

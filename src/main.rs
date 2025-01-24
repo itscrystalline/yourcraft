@@ -30,15 +30,8 @@ async fn main() -> io::Result<()> {
         let packet: Packet = from_slice(&buf[..len], DeOptions::new()).unwrap();
         
         match packet.t.into() {
-            PacketTypes::ClientHello => {
-                let hello_packet: ClientHello = unwrap_packet!(packet);
-                debug!("{:?}", hello_packet);
-            }
-            PacketTypes::ServerSync => {
-                let player_coords: ServerSync = unwrap_packet!(packet);
-                debug!("{:?}", player_coords);
-            }
             PacketTypes::Invalid => error!("unknown packet: {:?}", packet),
+            _ => todo!(),
         }
     }
 }
