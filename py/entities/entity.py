@@ -35,10 +35,10 @@ class Entity:
             self.addComponent(key, component)
 
     def tryGetComponent(self, key: str) -> Component:
-        return self.__components.get(key)
+        return self.__components[key]
 
     def setComponent(self, key: str, component: Component) -> None:
-        self.getComponent(key).setData(component.getData())
+        self.getComponent(key).setVariable(component.getVariable())
 
     # Don't use this if possible
     def followComponent(self, key: str, component: Component) -> None:
