@@ -1,5 +1,38 @@
 This is 2d minecraft written in rust and python.
 
+## Running
+> [!NOTE]
+> All paths are relative to the project root.
+### Rust Server
+Install rustup from https://rustup.rs/, then run
+`cargo run` to start the server immediately, or `cargo build`/`cargo build --release` to compile with/without dev symbols.
+
+The compiled binary will be in `target/debug/yourcraft-server(.exe)` or `target/release/yourcraft-server(.exe)`, depending on whether you compile with the `--release` flag or not.
+
+Simply run `yourcraft-server(.exe)` or double-click in Explorer on Windows.
+
+The server will start on port `8475` by default.
+
+### Python Client
+Using Python 3.12.7, activate a virtualenv by
+```shell
+python -m venv .venv
+source .venv/bin/activate
+```
+or on Windows:
+```shell
+python -m venv .venv
+.venv\Scripts\activate
+```
+If you are running on Powershell and get an error message about execution policies, run
+`Set-ExecutionPolicy Unrestricted` before running `.venv\Scripts\activate`.
+
+If the shell complains that `python` is not found, try a different alias. examlpes include
+`python3`, `python3.12`, `py` and `py3`.
+
+Then, run `pip install -r requirements.txt` to install the dependencies.
+
+Finally, simply run `python py/main.py` to start the client.
 
 ## Network Spec
 This project uses python's `pickle` format for communication between the server and the client.
