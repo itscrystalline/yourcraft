@@ -6,7 +6,9 @@
   env.LD_LIBRARY_PATH = "${pkgs.libglvnd}/lib";
 
   # https://devenv.sh/packages/
-  packages = [ pkgs.git pkgs.xorg.libX11 ];
+  packages = [ pkgs.git pkgs.xorg.libX11 pkgs.libz ] ++ (with pkgs.python312Packages; [
+    pygame
+  ]);
 
   # https://devenv.sh/languages/
   languages.rust = {
@@ -17,7 +19,5 @@
   languages.python = {
     enable = true;
     package = pkgs.python312Full;
-    venv.enable = true;
-    venv.requirements = builtins.readFile ./requirements.txt;
   };
 }

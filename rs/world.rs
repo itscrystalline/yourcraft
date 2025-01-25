@@ -1,6 +1,8 @@
 use std::io::Error;
+use std::time::Instant;
 use crate::network::ClientConnection;
 use log::{debug, warn};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
@@ -60,9 +62,11 @@ impl World {
         if width % chunk_size != 0 && height % chunk_size != 0 {
             Err(WorldError::MismatchedChunkSize)
         } else {
+            let start = Instant::now();
             let width_chunks = width / chunk_size;
             let height_chunks = height / chunk_size;
             let (chunks, player_loaded) = (0..width_chunks * height_chunks)
+                .into_par_iter()
                 .map(|idx| {
                     let chunk_x = idx % width_chunks;
                     let chunk_y = idx / width_chunks;
@@ -70,6 +74,7 @@ impl World {
                 })
                 .collect();
 
+            debug!("Generated {} chunks in {:?}", width_chunks * height_chunks, start.elapsed());
             Ok(World {
                 width,
                 height,
@@ -149,9 +154,9 @@ impl World {
     }
 
     pub fn unload_all_for(&mut self, player_loading_id: u32) {
-        for players_loading_chunk in self.player_loaded.iter_mut() {
+        self.player_loaded.par_iter_mut().for_each(|players_loading_chunk| {
             players_loading_chunk.retain(|&con| player_loading_id != con);
-        }
+        });
     }
 
     pub fn get_list_of_players_loading_chunk(
