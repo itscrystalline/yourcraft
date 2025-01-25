@@ -1,5 +1,5 @@
 use crate::player::Player;
-use crate::world::{Block, Chunk, World};
+use crate::world::{Chunk, World};
 use log::{error, info, warn};
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};

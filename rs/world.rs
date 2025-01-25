@@ -1,7 +1,6 @@
-use std::io::Error;
 use std::time::Instant;
 use crate::network::ClientConnection;
-use log::{debug, warn};
+use log::debug;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
