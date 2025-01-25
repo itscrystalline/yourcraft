@@ -24,7 +24,8 @@ async fn main() -> io::Result<()> {
     loop {
         clock.tick().await;
 
-        network::network_handler(&socket, &mut buf, &mut world).await?
+        network::network_handler(&socket, &mut buf, &mut world).await?;
+        world.tick();
     }
 }
 

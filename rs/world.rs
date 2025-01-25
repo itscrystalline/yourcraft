@@ -192,6 +192,11 @@ impl World {
         let chunk_y = pos_y / self.chunk_size;
         Ok((chunk_x, chunk_y))
     }
+    
+    pub fn tick(&mut self) {
+        // todo
+        // tick player collisions, block updates, etc.
+    }
 }
 
 impl Chunk {
