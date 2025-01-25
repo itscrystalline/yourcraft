@@ -1,8 +1,12 @@
-use std::net::SocketAddr;
-use serde::{Deserialize, Serialize};
+use crate::player::Player;
+use crate::world::{Block, Chunk, World};
+use log::{error, info, warn};
 use rand::prelude::*;
-use serde_pickle::{to_vec, SerOptions};
-use crate::world::{Block, Chunk};
+use serde::{Deserialize, Serialize};
+use serde_pickle::{from_slice, to_vec, DeOptions, SerOptions};
+use std::io;
+use std::net::SocketAddr;
+use tokio::net::UdpSocket;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Packet {
@@ -21,11 +25,12 @@ impl Packet {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub struct ClientConnection {
     pub addr: SocketAddr,
     pub name: String,
     pub id: u32,
-    pub loaded_chunks: Vec<(u32, u32)>,
+    pub server_player: Player,
 }
 
 impl ClientConnection {
@@ -34,8 +39,8 @@ impl ClientConnection {
         ClientConnection {
             addr,
             name,
+            server_player: Player::spawn_at_origin(),
             id: rng.next_u32(),
-            loaded_chunks: Vec::new(),
         }
     }
 }
@@ -72,7 +77,7 @@ macro_rules! define_packets {
         }
 
         $(
-            #[derive(Serialize, Deserialize, Debug)]
+            #[derive(Serialize, Deserialize, Debug, Clone)]
             pub struct $struct {
                 $(pub $field_name: $field_type),*
             }
@@ -120,12 +125,12 @@ define_packets!(
     },
     ClientGoodbye = 10 => ClientGoodbye {},
     ClientPlaceBlock = 11 => ClientPlaceBlock {
-        block: Block,
+        block: u8,
         x: u32,
         y: u32
     },
     ServerUpdateBlock = 12 => ServerUpdateBlock {
-        block: Block,
+        block: u8,
         x: u32,
         y: u32
     },
@@ -139,3 +144,166 @@ define_packets!(
         pos_y: f32
     }
 );
+
+macro_rules! unwrap_packet_or_ignore {
+    ($packet: expr) => {
+        match from_slice(&$packet.data, DeOptions::new()) {
+            Ok(packet) => packet,
+            Err(_) => {
+                error!("Received differing packet content from what type of packet suggests ({})! ignoring.", $packet.t);
+                return Ok(());
+            }
+        }
+    };
+}
+
+macro_rules! encode_and_send {
+    ($packet_type: expr, $packet: expr, $socket: expr, $addr: expr) => {
+        let encoded = Packet::encode($packet_type, $packet).unwrap();
+        $socket.send_to(&encoded, $addr).await?;
+    };
+}
+
+pub async fn network_handler(
+    socket: &UdpSocket,
+    buf: &mut [u8],
+    world: &mut World,
+) -> io::Result<()> {
+    let (len, client_addr) = socket.recv_from(buf).await?;
+    info!("{:?} bytes received from {:?}", len, client_addr);
+
+    let packet: serde_pickle::Result<Packet> = from_slice(&buf[..len], DeOptions::new());
+    match packet {
+        Ok(packet) => {
+            process_client_packet(socket, packet, client_addr, world).await?;
+        }
+        Err(e) => {
+            warn!(
+                "Recieved unknown packet from {}, ignoring! (Err: {:?})",
+                client_addr, e
+            );
+        }
+    }
+
+    Ok(())
+}
+async fn process_client_packet(
+    socket: &UdpSocket,
+    packet: Packet,
+    addr: SocketAddr,
+    world: &mut World,
+) -> io::Result<()> {
+    match packet.t.into() {
+        PacketTypes::ClientHello => {
+            let hello_packet: ClientHello = unwrap_packet_or_ignore!(packet);
+            info!("{} joined the server!", hello_packet.name);
+            let connection = ClientConnection::new(addr, hello_packet.name);
+
+            let response = ServerSync {
+                player_id: connection.id,
+                world_width: world.width,
+                world_height: world.height,
+                chunk_size: world.chunk_size,
+            };
+
+            encode_and_send!(PacketTypes::ServerSync, response, socket, addr);
+            world.players.push(connection);
+        }
+        PacketTypes::ClientGoodbye => {
+            match world.players.iter().position(|x| x.addr == addr) {
+                None => error!("Goodbye packet from address that hasn't joined! ({})", addr),
+                Some(idx) => {
+                    let connection = world.players.swap_remove(idx);
+                    world.unload_all_for(connection.id);
+                    info!(
+                        "{} (addr: {}) left the server!",
+                        connection.name, connection.addr
+                    );
+                }
+            };
+        }
+        PacketTypes::ClientPlaceBlock => {
+            let place_block_packet: ClientPlaceBlock = unwrap_packet_or_ignore!(packet);
+            match world.set_block(
+                place_block_packet.x,
+                place_block_packet.y,
+                place_block_packet.block.into(),
+            ) {
+                Ok(_) => {
+                    let (chunk_x, chunk_y) = world
+                        .get_chunk_block_is_in(place_block_packet.x, place_block_packet.y)
+                        .unwrap();
+                    let players_loading = world
+                        .get_list_of_players_loading_chunk(chunk_x, chunk_y)
+                        .unwrap();
+                    let response = ServerUpdateBlock {
+                        block: place_block_packet.block,
+                        x: place_block_packet.x,
+                        y: place_block_packet.y,
+                    };
+                    
+                    for player in players_loading {
+                        encode_and_send!(PacketTypes::ServerUpdateBlock, response.clone(), socket, player.addr);
+                    }
+                }
+                Err(e) => {
+                    error!(
+                        "cannot place block at ({}, {}): {:?}",
+                        place_block_packet.x, place_block_packet.y, e
+                    );
+                }
+            };
+        }
+        PacketTypes::ClientPlayerJump => {
+            todo!()
+        }
+        PacketTypes::ClientPlayerMoveX => {
+            todo!()
+        }
+        PacketTypes::ClientRequestChunk => match world.players.iter().find(|x| x.addr == addr) {
+            None => error!("addr hasn't joined! ({})", addr),
+            Some(player_conn) => {
+                let request_packet: ClientRequestChunk = unwrap_packet_or_ignore!(packet);
+                match world.mark_chunk_loaded_by_id(
+                    request_packet.chunk_coords_x,
+                    request_packet.chunk_coords_y,
+                    player_conn.id,
+                ) {
+                    Ok(chunk) => {
+                        let response = ServerChunkResponse {
+                            chunk: chunk.clone(),
+                        };
+                        encode_and_send!(PacketTypes::ServerChunkResponse, response, socket, addr);
+                    }
+                    Err(err) => {
+                        error!("error marking chunk as loaded! {:?}", err);
+                    }
+                };
+            }
+        },
+        PacketTypes::ClientUnloadChunk => match world.players.iter().find(|x| x.addr == addr) {
+            None => error!("addr hasn't joined! ({})", addr),
+            Some(player_conn) => {
+                let request_packet: ClientUnloadChunk = unwrap_packet_or_ignore!(packet);
+                match world.unmark_loaded_chunk_for(
+                    request_packet.chunk_coords_x,
+                    request_packet.chunk_coords_y,
+                    player_conn.id,
+                ) {
+                    Ok(_) => (),
+                    Err(err) => {
+                        error!("error marking chunk as unloaded! {:?}", err);
+                    }
+                };
+            }
+        },
+        _ => {
+            error!(
+                "server received unknown or client bound packet: {:?}",
+                packet
+            );
+        }
+    }
+
+    Ok(())
+}
