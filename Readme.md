@@ -1,4 +1,4 @@
-This is 2d minecraft written in rust and python.
+This is 2d minecraft written in Rust and Python.
 
 ## Running
 > [!NOTE]
@@ -35,11 +35,11 @@ Then, run `pip install -r requirements.txt` to install the dependencies.
 Finally, simply run `python py/main.py` to start the client.
 
 ## Network Spec
-This project uses python's `pickle` format for communication between the server and the client.
+This project uses Python's `pickle` format for communication between the server and the client.
 
-The client side will use the `pickle` python module, while the server side will use the `serde_pickle` Rust crate.
+The client side will use the `pickle` Python module, while the server side will use the `serde_pickle` Rust crate.
 
-The generic packet will be a serialized python dict / rust struct defined as follows:
+The generic packet will be a serialized Python dict / rust struct defined as follows:
 ```
 {
   t: int/u8 ( u8 <-> PacketTypes Enum via the Into trait)
@@ -49,7 +49,7 @@ The generic packet will be a serialized python dict / rust struct defined as fol
 
 each packet will have its own ID used to identify what the packet is. this is signified as `t`.
 
-the data that each packet carries is serialized and stored as `data`, which will also have to be unpickled into a python `dict`.
+the data that each packet carries is serialized and stored as `data`, which will also have to be unpickled into a Python `dict`.
 
 the reason this is done is to make sure that the server/client can decode all incoming packets properly, and can discard any invalid ones.
 
@@ -57,7 +57,7 @@ the reason this is done is to make sure that the server/client can decode all in
 The client **must** request the server to load/unload chunks. the server **will only** broadcast block/player updates that are in the client's loaded area.
 
 ### Packet ID List & content 
-✅: fully implmented & tested, 🟨: implemented but not tested, ⬛: not implemented
+✅: fully implemented & tested, 🟨: implemented but not tested, ⬛: not implemented
 
 (Server, Client)
 ```
