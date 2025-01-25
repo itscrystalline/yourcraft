@@ -21,7 +21,7 @@ BLUE = (0, 0, 255)
 currentPlayer = classic_entity.Player()
 currentPlayer.keys = [pygame.K_w,pygame.K_a,pygame.K_s,pygame.K_d]
 print(currentPlayer.__dict__)
-position2D = currentPlayer.getComponent("transfrom2D").getVariable("position")
+position2D = currentPlayer.getComponent("transform2D").getVariable("position")
 
 # Game loop
 running = True
