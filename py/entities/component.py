@@ -15,7 +15,7 @@ class Component(abc.ABC):
 
     # Component behaviour
     @final
-    def getVariable(self, *__keys: tuple[str]) -> Any:
+    def getVariable(self, *__keys: tuple[str]|str) -> Any:
         __dict = {}
         if __keys[0] == 1:
             return self.__dict__
