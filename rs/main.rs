@@ -1,5 +1,5 @@
 use crate::world::{Block, World};
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use log::{error, info};
 use std::io;
 use std::process::exit;
@@ -22,6 +22,17 @@ struct Settings {
     world_height: u32,
     #[arg(short, long, default_value = "16")]
     chunk_size: u32,
+    #[command(subcommand)]
+    world_type: WorldType,
+}
+
+#[derive(Subcommand, Debug)]
+enum WorldType {
+    Empty,
+    Flat {
+        #[arg(short, long, default_value = "4")]
+        grass_height: u32,
+    },
 }
 
 #[tokio::main]
@@ -32,12 +43,20 @@ async fn main() -> io::Result<()> {
 
     let mut clock = time::interval(Duration::from_millis(20));
 
-    let mut world = match World::generate_flat(
-        settings.world_width,
-        settings.world_height,
-        settings.chunk_size,
-        4,
-    ) {
+    let world_res = match settings.world_type {
+        WorldType::Empty => World::generate_empty(
+            settings.world_width,
+            settings.world_height,
+            settings.chunk_size,
+        ),
+        WorldType::Flat { grass_height } => World::generate_flat(
+            settings.world_width,
+            settings.world_height,
+            settings.chunk_size,
+            grass_height,
+        ),
+    };
+    let mut world = match world_res {
         Ok(w) => w,
         Err(e) => {
             error!("Error creating world: {e}");
