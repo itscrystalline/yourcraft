@@ -89,10 +89,10 @@ The client **must** request the server to load/unload chunks. the server **will 
 3: [C2S] ClientRequestChunk (chunk_coords_x: int, chunk_coords_y: int)                     🟨⬛
 4: [S2C] ServerChunkResponse (chunk: Chunk, see world.rs for impl)                         🟨⬛
 5: [C2S] ClientUnloadChunk (chunk_coords_x: int, chunk_coords_y: int)                      🟨⬛
-6: [S2C] ServerPlayerJoin (player_name: str, player_id: int)                               ⬛⬛
-7: [S2C] ServerPlayerEnterLoaded (player_name: str, player_id: int)                        ⬛⬛
-8: [S2C] ServerPlayerLeaveLoaded (player_name: str, player_id: int)                        ⬛⬛
-9: [S2C] ServerPlayerLeave (player_name: str, player_id: int)                              ⬛⬛
+6: [S2C] ServerPlayerJoin (player_name: str, player_id: int)                               🟨⬛
+7: [S2C] ServerPlayerEnterLoaded (player_name: str, player_id: int)                        🟨⬛
+8: [S2C] ServerPlayerLeaveLoaded (player_name: str, player_id: int)                        🟨⬛
+9: [S2C] ServerPlayerLeave (player_name: str, player_id: int)                              🟨⬛
 10: [C2S] ClientGoodbye ()                                                                 🟨⬛
 11: [C2S] ClientPlaceBlock (block: Block Enum as int, x: int, y: int)                      🟨⬛
 12: [S2C] ServerUpdateBlock (block: Block Enum as int, x: int, y: int)                     🟨⬛

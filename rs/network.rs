@@ -2,6 +2,8 @@ use crate::player::Player;
 use crate::world::{Chunk, World, WorldError};
 use log::{error, info, warn};
 use rand::prelude::*;
+use rayon::iter::ParallelIterator;
+use rayon::prelude::IntoParallelRefIterator;
 use serde::{Deserialize, Serialize};
 use serde_pickle::{from_slice, to_vec, DeOptions, SerOptions};
 use std::io;
@@ -199,6 +201,10 @@ async fn process_client_packet(
             let hello_packet: ClientHello = unwrap_packet_or_ignore!(packet);
             info!("{} joined the server!", hello_packet.name);
             let connection = ClientConnection::new(addr, hello_packet.name);
+            let spawn_block_pos = (
+                connection.server_player.x.round() as u32,
+                connection.server_player.y.round() as u32,
+            );
 
             let response = ServerSync {
                 player_id: connection.id,
@@ -208,6 +214,41 @@ async fn process_client_packet(
             };
 
             encode_and_send!(PacketTypes::ServerSync, response, socket, addr);
+
+            // notify other players and the ones loading the chunk
+            let spawn_chunk_pos = world
+                .get_chunk_block_is_in(spawn_block_pos.0, spawn_block_pos.1)
+                .unwrap();
+            let players_loading_chunk = world
+                .get_list_of_players_loading_chunk(spawn_chunk_pos.0, spawn_chunk_pos.1)
+                .unwrap();
+
+            let to_broadcast = ServerPlayerJoin {
+                player_name: connection.name.clone(),
+                player_id: connection.id,
+            };
+            let to_broadcast_chunk = ServerPlayerEnterLoaded {
+                player_name: connection.name.clone(),
+                player_id: connection.id,
+            };
+
+            for player in world.players.iter() {
+                encode_and_send!(
+                    PacketTypes::ServerPlayerJoin,
+                    to_broadcast.clone(),
+                    socket,
+                    player.addr
+                );
+                if players_loading_chunk.contains(&player) {
+                    encode_and_send!(
+                        PacketTypes::ServerPlayerEnterLoaded,
+                        to_broadcast_chunk.clone(),
+                        socket,
+                        player.addr
+                    );
+                }
+            }
+
             world.players.push(connection);
         }
         PacketTypes::ClientGoodbye => {
@@ -220,6 +261,46 @@ async fn process_client_packet(
                         "{} (addr: {}) left the server!",
                         connection.name, connection.addr
                     );
+
+                    let last_location = (
+                        connection.server_player.x.round() as u32,
+                        connection.server_player.y.round() as u32,
+                    );
+                    let last_location_chunk_pos = world
+                        .get_chunk_block_is_in(last_location.0, last_location.1)
+                        .unwrap();
+                    let players_loading_chunk = world
+                        .get_list_of_players_loading_chunk(
+                            last_location_chunk_pos.0,
+                            last_location_chunk_pos.1,
+                        )
+                        .unwrap();
+
+                    let to_broadcast = ServerPlayerLeave {
+                        player_name: connection.name.clone(),
+                        player_id: connection.id,
+                    };
+                    let to_broadcast_chunk = ServerPlayerLeaveLoaded {
+                        player_name: connection.name.clone(),
+                        player_id: connection.id,
+                    };
+
+                    for player in world.players.iter() {
+                        encode_and_send!(
+                            PacketTypes::ServerPlayerLeave,
+                            to_broadcast.clone(),
+                            socket,
+                            player.addr
+                        );
+                        if players_loading_chunk.contains(&player) {
+                            encode_and_send!(
+                                PacketTypes::ServerPlayerLeaveLoaded,
+                                to_broadcast_chunk.clone(),
+                                socket,
+                                player.addr
+                            );
+                        }
+                    }
                 }
             };
         }
