@@ -1,5 +1,5 @@
 use crate::player::Player;
-use crate::world::{Chunk, World};
+use crate::world::{Chunk, World, WorldError};
 use log::{error, info, warn};
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -234,14 +234,12 @@ async fn process_client_packet(
                 )
                 .await
             {
-                Ok(res) => res.unwrap_or_else(|e| {
-                    error!(
-                        "cannot place block at ({}, {}): {}",
-                        place_block_packet.x, place_block_packet.y, e
-                    )
-                }),
+                Ok(_) => (),
                 Err(e) => {
-                    error!("error propagating world changes to clients: {e}")
+                    match e {
+                        WorldError::NetworkError(e) => error!("error while notifying clients: {e}"),
+                        _ => error!("error while placing block: {e}") 
+                    }
                 }
             };
         }

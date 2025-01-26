@@ -7,13 +7,14 @@ use std::io;
 use std::time::Instant;
 use tokio::net::UdpSocket;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum WorldError {
     MismatchedChunkSize,
     OutOfBounds(u32, u32),
     PlaceOutOfLoadedChunk,
     ChunkAlreadyLoaded,
     ChunkAlreadyUnloaded,
+    NetworkError(io::Error),
 }
 
 impl std::fmt::Display for WorldError {
@@ -27,7 +28,14 @@ impl std::fmt::Display for WorldError {
                 f,
                 "Mismatched chunk size, both width and height must be a multiple of chunk_size"
             ),
+            WorldError::NetworkError(err) => err.fmt(f),
         }
+    }
+}
+
+impl From<io::Error> for WorldError {
+    fn from(err: io::Error) -> WorldError {
+        WorldError::NetworkError(err)
     }
 }
 
@@ -246,25 +254,11 @@ impl World {
         pos_x: u32,
         pos_y: u32,
         block: Block,
-    ) -> io::Result<Result<(), WorldError>> {
-        macro_rules! double_unwrap {
-            ($to_match: expr) => {
-                match $to_match {
-                    Ok(ret) => ret,
-                    Err(e) => return Ok(Err(e)),
-                }
-            };
-        }
-        macro_rules! ok {
-            () => {
-                Ok(Ok(()))
-            };
-        }
+    ) -> Result<(), WorldError> {
 
-        double_unwrap!(self.set_block(pos_x, pos_y, block.into()));
-        let (chunk_x, chunk_y) = double_unwrap!(self.get_chunk_block_is_in(pos_x, pos_y));
-        let players_loading =
-            double_unwrap!(self.get_list_of_players_loading_chunk(chunk_x, chunk_y));
+        self.set_block(pos_x, pos_y, block.into())?;
+        let (chunk_x, chunk_y) = self.get_chunk_block_is_in(pos_x, pos_y)?;
+        let players_loading = self.get_list_of_players_loading_chunk(chunk_x, chunk_y)?;
         let response = ServerUpdateBlock {
             block: block.into(),
             x: pos_x,
@@ -280,7 +274,7 @@ impl World {
             );
         }
 
-        ok!()
+        Ok(())
     }
 
     pub fn get_chunk_block_is_in(&self, pos_x: u32, pos_y: u32) -> Result<(u32, u32), WorldError> {
