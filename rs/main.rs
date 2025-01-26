@@ -1,15 +1,15 @@
-use tokio::net::UdpSocket;
-use std::io;
-use std::process::exit;
+use crate::world::{Block, World};
 use clap::Parser;
 use log::{error, info};
-use crate::world::{Block, World};
+use std::io;
+use std::process::exit;
+use tokio::net::UdpSocket;
 use tokio::time::{self, Duration};
 
 #[macro_use]
 mod network;
-mod world;
 mod player;
+mod world;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about)]
@@ -21,7 +21,7 @@ struct Settings {
     #[arg(long, default_value = "256")]
     world_height: u32,
     #[arg(short, long, default_value = "16")]
-    chunk_size: u32
+    chunk_size: u32,
 }
 
 #[tokio::main]
@@ -32,14 +32,19 @@ async fn main() -> io::Result<()> {
 
     let mut clock = time::interval(Duration::from_millis(20));
 
-    let mut world = match World::generate_flat(settings.world_width, settings.world_height, settings.chunk_size, 4) {
+    let mut world = match World::generate_flat(
+        settings.world_width,
+        settings.world_height,
+        settings.chunk_size,
+        4,
+    ) {
         Ok(w) => w,
-        Err(e) => { 
+        Err(e) => {
             error!("Error creating world: {e}");
             exit(1)
         }
     };
-    
+
     let socket = UdpSocket::bind(format!("0.0.0.0:{}", settings.port)).await?;
     let mut buf = [0u8; 1024];
     info!("Listening on {}", socket.local_addr()?);
@@ -51,4 +56,3 @@ async fn main() -> io::Result<()> {
         world.tick(&socket).await?;
     }
 }
-

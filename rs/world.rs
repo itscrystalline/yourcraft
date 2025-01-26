@@ -255,7 +255,6 @@ impl World {
         pos_y: u32,
         block: Block,
     ) -> Result<(), WorldError> {
-
         self.set_block(pos_x, pos_y, block.into())?;
         let (chunk_x, chunk_y) = self.get_chunk_block_is_in(pos_x, pos_y)?;
         let players_loading = self.get_list_of_players_loading_chunk(chunk_x, chunk_y)?;

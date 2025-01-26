@@ -6,9 +6,6 @@ pub struct Player {
 
 impl Player {
     pub fn spawn_at_origin() -> Self {
-        Player {
-            x: 0.0,
-            y: 0.0,
-        }
+        Player { x: 0.0, y: 0.0 }
     }
 }

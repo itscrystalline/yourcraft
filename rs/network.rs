@@ -235,12 +235,10 @@ async fn process_client_packet(
                 .await
             {
                 Ok(_) => (),
-                Err(e) => {
-                    match e {
-                        WorldError::NetworkError(e) => error!("error while notifying clients: {e}"),
-                        _ => error!("error while placing block: {e}") 
-                    }
-                }
+                Err(e) => match e {
+                    WorldError::NetworkError(e) => error!("error while notifying clients: {e}"),
+                    _ => error!("error while placing block: {e}"),
+                },
             };
         }
         PacketTypes::ClientPlayerJump => {
