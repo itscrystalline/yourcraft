@@ -97,8 +97,9 @@ The client **must** request the server to load/unload chunks. the server **will 
 11: [C2S] ClientPlaceBlock (block: Block Enum as int, x: int, y: int)                      🟨⬛
 12: [S2C] ServerUpdateBlock (block: Block Enum as int, x: int, y: int)                     🟨⬛
 13: [C2S] ClientPlayerMoveX (pos_x: float)                                                 ⬛⬛
-13: [C2S] ClientPlayerJump ()                                                              ⬛⬛
-14: [S2C] ServerPlayerUpdatePos (player_id: int, pos_x: float, pos_y: float)               ⬛⬛
+14: [C2S] ClientPlayerJump ()                                                              ⬛⬛
+15: [S2C] ServerPlayerUpdatePos (player_id: int, pos_x: float, pos_y: float)               ⬛⬛
+16: [S2C] ServerKick (msg: str)                                                                    ⬛⬛
 ```
 
 ### Lifecycle Overview
@@ -111,6 +112,7 @@ ClientHello ---------------------------------->
                       ...
 <----------------------------- ServerPlayerJoin
 <---------------------------- ServerPlayerLeave
+<----------------------------------- ServerKick
                       ...
 ClientRequestChunk --------------------------->
 <-------------------------- ServerChunkResponse

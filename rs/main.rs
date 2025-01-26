@@ -4,6 +4,9 @@ use log::{error, info};
 use std::io;
 use std::process::exit;
 use tokio::net::UdpSocket;
+use tokio::signal;
+use tokio::signal::unix::{signal, SignalKind};
+use tokio::sync::mpsc;
 use tokio::time::{self, Duration};
 
 #[macro_use]
@@ -67,11 +70,21 @@ async fn main() -> io::Result<()> {
     let socket = UdpSocket::bind(format!("0.0.0.0:{}", settings.port)).await?;
     let mut buf = [0u8; 1024];
     info!("Listening on {}", socket.local_addr()?);
-
     loop {
-        clock.tick().await;
-
-        network::incoming_packet_handler(&socket, &mut buf, &mut world).await?;
-        world.tick(&socket).await?;
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                world.shutdown(&socket).await?;
+                info!("Server shutdown complete.");
+                break;
+            }
+            packet = socket.recv_from(&mut buf) => {
+                network::incoming_packet_handler(&socket, &mut buf, &mut world, packet?).await?
+            }
+            _ = clock.tick() => {
+                world.tick(&socket).await?;
+            }
+        }
     }
+
+    Ok(())
 }

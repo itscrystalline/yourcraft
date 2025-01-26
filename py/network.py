@@ -1,11 +1,10 @@
 import pickle
-import random
 import socket
-
-from time import sleep, time
 
 HELLO = 1
 PLAYER_COORDINATES = 2
+GOODBYE = 10
+KICK = 16
 
 class Packet:
     def __init__(self, packet_type):
@@ -17,18 +16,30 @@ class Packet:
         d = dict(self.__dict__)
         d.pop("t")
         return d
-class Connection:
+
+
+class ServerConnection:
     def __init__(self, ip: str, port: int = 8475):
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
         self.ip_port = (ip, port)
     def send(self, packet: Packet):
         self.socket.sendto(packet.serialize(), self.ip_port)
+
+    def recv(self):
+        packet = pickle.loads(self.socket.recv(1024))
+        packet['data'] = pickle.loads(packet['data'])
+        return packet
 
 
 class Hello(Packet):
     def __init__(self, username):
         super().__init__(HELLO)
-        self.username = username
+        self.name = username
+
+
+class Goodbye(Packet):
+    def __init__(self):
+        super().__init__(GOODBYE)
 
 class PlayerCoordinates(Packet):
     def __init__(self, x, y):
@@ -37,13 +48,12 @@ class PlayerCoordinates(Packet):
         self.y = y
 
 if __name__ == "__main__":
-    type = int(input("test type:"))
-    conn = Connection("127.0.0.1")
+    conn = ServerConnection("127.0.0.1")
 
+    conn.send(Hello("test"))
+    print(conn.recv())
     while True:
-        if type == 0:
-            conn.send(Hello(int(time() * 1000)))
-        elif type == 1:
-            conn.send(PlayerCoordinates(random.randint(-100, 100), random.randint(-100, 100)))
-
-        sleep(1)
+        receiving = conn.recv()
+        if receiving['t'] == 16:
+            print("kicked because", receiving['data']['msg'])
+            exit(0)

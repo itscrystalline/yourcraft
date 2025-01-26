@@ -2,8 +2,6 @@ use crate::player::Player;
 use crate::world::{Chunk, World, WorldError};
 use log::{error, info, warn};
 use rand::prelude::*;
-use rayon::iter::ParallelIterator;
-use rayon::prelude::IntoParallelRefIterator;
 use serde::{Deserialize, Serialize};
 use serde_pickle::{from_slice, to_vec, DeOptions, SerOptions};
 use std::io;
@@ -144,7 +142,10 @@ define_packets!(
         player_id: u32,
         pos_x: f32,
         pos_y: f32
-    }
+    },
+    ServerKick = 16 => ServerKick {
+        msg: String
+    },
 );
 
 /// returns from the function early if packet fails to decode.
@@ -152,7 +153,8 @@ macro_rules! unwrap_packet_or_ignore {
     ($packet: expr) => {
         match from_slice(&$packet.data, DeOptions::new()) {
             Ok(packet) => packet,
-            Err(_) => {
+            Err(err) => {
+                error!("Failed to deserialize packet: {}", err);
                 error!("Received differing packet content from what type of packet suggests ({})! ignoring.", $packet.t);
                 return Ok(());
             }
@@ -172,8 +174,9 @@ pub async fn incoming_packet_handler(
     socket: &UdpSocket,
     buf: &mut [u8],
     world: &mut World,
+    recv: (usize, SocketAddr),
 ) -> io::Result<()> {
-    let (len, client_addr) = socket.recv_from(buf).await?;
+    let (len, client_addr) = recv;
     info!("{:?} bytes received from {:?}", len, client_addr);
 
     let packet: serde_pickle::Result<Packet> = from_slice(&buf[..len], DeOptions::new());

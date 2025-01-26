@@ -1,5 +1,5 @@
-use crate::network::Packet;
-use crate::network::{ClientConnection, PacketTypes, ServerUpdateBlock};
+use crate::network::{ClientConnection, PacketTypes, ServerKick, ServerUpdateBlock};
+use crate::network::{Packet, ServerPlayerLeave, ServerPlayerLeaveLoaded};
 use log::{debug, error, info};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -273,6 +273,87 @@ impl World {
             );
         }
 
+        Ok(())
+    }
+
+    pub async fn shutdown(&mut self, socket: &UdpSocket) -> io::Result<()> {
+        info!("Shutting down Server!");
+        let kick_msg = String::from("Server Shutting Down!");
+        self.player_loaded
+            .par_iter_mut()
+            .for_each(|chunk| chunk.clear());
+
+        let kick = ServerKick { msg: kick_msg };
+        for player in &mut self.players {
+            encode_and_send!(PacketTypes::ServerKick, kick.clone(), socket, player.addr);
+        }
+        self.players.clear();
+        Ok(())
+    }
+
+    pub async fn kick(
+        &mut self,
+        socket: &UdpSocket,
+        id: u32,
+        msg: Option<String>,
+    ) -> io::Result<()> {
+        match self.players.iter().position(|x| x.id == id) {
+            None => error!("Kicking player that hasn't joined! ({})", id),
+            Some(idx) => {
+                let connection = self.players.swap_remove(idx);
+                let kick_msg = msg.unwrap_or(String::from("No kick message provided"));
+                self.unload_all_for(connection.id);
+                info!(
+                    "{} (addr: {}) kicked from sever! ({})",
+                    connection.name,
+                    connection.addr,
+                    kick_msg.clone()
+                );
+
+                let last_location = (
+                    connection.server_player.x.round() as u32,
+                    connection.server_player.y.round() as u32,
+                );
+                let last_location_chunk_pos = self
+                    .get_chunk_block_is_in(last_location.0, last_location.1)
+                    .unwrap();
+                let players_loading_chunk = self
+                    .get_list_of_players_loading_chunk(
+                        last_location_chunk_pos.0,
+                        last_location_chunk_pos.1,
+                    )
+                    .unwrap();
+
+                let to_broadcast = ServerPlayerLeave {
+                    player_name: connection.name.clone(),
+                    player_id: connection.id,
+                };
+                let to_broadcast_chunk = ServerPlayerLeaveLoaded {
+                    player_name: connection.name.clone(),
+                    player_id: connection.id,
+                };
+
+                let kick = ServerKick { msg: kick_msg };
+                encode_and_send!(PacketTypes::ServerKick, kick, socket, connection.addr);
+
+                for player in self.players.iter() {
+                    encode_and_send!(
+                        PacketTypes::ServerPlayerLeave,
+                        to_broadcast.clone(),
+                        socket,
+                        player.addr
+                    );
+                    if players_loading_chunk.contains(&player) {
+                        encode_and_send!(
+                            PacketTypes::ServerPlayerLeaveLoaded,
+                            to_broadcast_chunk.clone(),
+                            socket,
+                            player.addr
+                        );
+                    }
+                }
+            }
+        };
         Ok(())
     }
 
