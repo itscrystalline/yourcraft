@@ -7,7 +7,9 @@
 
   # https://devenv.sh/packages/
   packages = [ pkgs.git pkgs.xorg.libX11 pkgs.libz ] ++ (with pkgs.python312Packages; [
-    pygame
+    (pygame.overrideAttrs (oldAttrs: newAttrs: {
+        env.PYGAME_DETECT_AVX2 = 1;
+    }))
   ]);
 
   # https://devenv.sh/languages/
