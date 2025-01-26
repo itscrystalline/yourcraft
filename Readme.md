@@ -85,7 +85,7 @@ The client **must** request the server to load/unload chunks. the server **will 
 ```
 0: Invalid Packet.
 1: [C2S] ClientHello (name: str)                                                           ✅✅
-2: [S2C] ServerSync (player_id: int, world_width: int, world_height: int, chunk_size: int) 🟨⬛
+2: [S2C] ServerSync (player_id: int, world_width: int, world_height: int, chunk_size: int) ✅✅
 3: [C2S] ClientRequestChunk (chunk_coords_x: int, chunk_coords_y: int)                     🟨⬛
 4: [S2C] ServerChunkResponse (chunk: Chunk, see world.rs for impl)                         🟨⬛
 5: [C2S] ClientUnloadChunk (chunk_coords_x: int, chunk_coords_y: int)                      🟨⬛
@@ -93,13 +93,13 @@ The client **must** request the server to load/unload chunks. the server **will 
 7: [S2C] ServerPlayerEnterLoaded (player_name: str, player_id: int)                        🟨⬛
 8: [S2C] ServerPlayerLeaveLoaded (player_name: str, player_id: int)                        🟨⬛
 9: [S2C] ServerPlayerLeave (player_name: str, player_id: int)                              🟨⬛
-10: [C2S] ClientGoodbye ()                                                                 🟨⬛
+10: [C2S] ClientGoodbye ()                                                                 ✅✅
 11: [C2S] ClientPlaceBlock (block: Block Enum as int, x: int, y: int)                      🟨⬛
 12: [S2C] ServerUpdateBlock (block: Block Enum as int, x: int, y: int)                     🟨⬛
 13: [C2S] ClientPlayerMoveX (pos_x: float)                                                 ⬛⬛
 14: [C2S] ClientPlayerJump ()                                                              ⬛⬛
 15: [S2C] ServerPlayerUpdatePos (player_id: int, pos_x: float, pos_y: float)               ⬛⬛
-16: [S2C] ServerKick (msg: str)                                                                    ⬛⬛
+16: [S2C] ServerKick (msg: str)                                                            ✅✅
 ```
 
 ### Lifecycle Overview
