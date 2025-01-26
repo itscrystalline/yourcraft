@@ -9,9 +9,31 @@ Install rustup from https://rustup.rs/, then run
 
 The compiled binary will be in `target/debug/yourcraft-server(.exe)` or `target/release/yourcraft-server(.exe)`, depending on whether you compile with the `--release` flag or not.
 
-Simply run `yourcraft-server(.exe)` or double-click in Explorer on Windows.
+Simply run `yourcraft-server(.exe) [options..]` or double-click in Explorer on Windows.
 
 The server will start on port `8475` by default.
+
+**Options**
+
+```shell
+> ./yourcraft-server --help
+KOSEN-KMITL Programming 4 Final Project - A 2d sandbox game server.
+
+Usage: yourcraft-server [OPTIONS] <COMMAND>
+
+Commands:
+  empty  
+  flat   [-g, --grass-height [default: 4]]
+  help   Print this message or the help of the given subcommand(s)
+
+Options:
+  -p, --port <PORT>                  [default: 8475]
+      --world-width <WORLD_WIDTH>    [default: 1024]
+      --world-height <WORLD_HEIGHT>  [default: 256]
+  -c, --chunk-size <CHUNK_SIZE>      [default: 16]
+  -h, --help                         Print help
+  -V, --version                      Print version
+```
 
 ### Python Client
 Using Python 3.12.7, activate a virtualenv by
@@ -67,10 +89,10 @@ The client **must** request the server to load/unload chunks. the server **will 
 3: [C2S] ClientRequestChunk (chunk_coords_x: int, chunk_coords_y: int)                     🟨⬛
 4: [S2C] ServerChunkResponse (chunk: Chunk, see world.rs for impl)                         🟨⬛
 5: [C2S] ClientUnloadChunk (chunk_coords_x: int, chunk_coords_y: int)                      🟨⬛
-6: [S2C] ServerPlayerJoin (player_name: str, player_id: int)                               🟨⬛
-7: [S2C] ServerPlayerEnterLoaded (player_name: str, player_id: int)                        🟨⬛
-8: [S2C] ServerPlayerLeaveLoaded (player_name: str, player_id: int)                        🟨⬛
-9: [S2C] ServerPlayerLeave (player_name: str, player_id: int)                              🟨⬛
+6: [S2C] ServerPlayerJoin (player_name: str, player_id: int)                               ⬛⬛
+7: [S2C] ServerPlayerEnterLoaded (player_name: str, player_id: int)                        ⬛⬛
+8: [S2C] ServerPlayerLeaveLoaded (player_name: str, player_id: int)                        ⬛⬛
+9: [S2C] ServerPlayerLeave (player_name: str, player_id: int)                              ⬛⬛
 10: [C2S] ClientGoodbye ()                                                                 🟨⬛
 11: [C2S] ClientPlaceBlock (block: Block Enum as int, x: int, y: int)                      🟨⬛
 12: [S2C] ServerUpdateBlock (block: Block Enum as int, x: int, y: int)                     🟨⬛

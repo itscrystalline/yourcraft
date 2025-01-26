@@ -139,7 +139,7 @@ impl World {
         }
 
         info!(
-            "filled {} * {} area with grass and stone {:?}",
+            "filled {} * {} area with grass and stone in {:?}",
             width,
             grass_level,
             start.elapsed()
