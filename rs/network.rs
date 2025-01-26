@@ -147,6 +147,7 @@ define_packets!(
     }
 );
 
+/// returns from the function early if packet fails to decode.
 macro_rules! unwrap_packet_or_ignore {
     ($packet: expr) => {
         match from_slice(&$packet.data, DeOptions::new()) {
