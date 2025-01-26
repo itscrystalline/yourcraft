@@ -29,6 +29,54 @@ class Position2D(Component):
 
 
 @dataclasses.dataclass
+class Velocity2D(Component):
+    vx: float = 0
+    vy: float = 0
+
+    def __add__(self, other: Union["Velocity2D", tuple, list]):
+        if isinstance(other, Velocity2D):
+            return Velocity2D(vx=self.vx + other.vx, vy=self.vy + other.vy)
+        else:
+            return Velocity2D(vx=self.vx + other[0], vy=self.vy + other[1])
+
+    def __sub__(self, other: Union["Velocity2D", tuple, list]):
+        if isinstance(other, Velocity2D):
+            return Velocity2D(vx=self.vx - other.vx, vy=self.vy - other.vy)
+        else:
+            return Velocity2D(vx=self.vx - other[0], vy=self.vy - other[1])
+
+    def __mul__(self, other: float | int | complex):
+        return Velocity2D(vx=self.vx * other, vy=self.vy * other)
+
+    def __str__(self):
+        return f"Velocity2D vx={self.vx}, vy={self.vy}"
+
+
+@dataclasses.dataclass
+class Acceleration2D(Component):
+    ax: float = 0
+    ay: float = 0
+
+    def __add__(self, other: Union["Acceleration2D", tuple, list]):
+        if isinstance(other, Acceleration2D):
+            return Acceleration2D(ax=self.ax + other.ax, ay=self.ay + other.ay)
+        else:
+            return Acceleration2D(ax=self.ax + other[0], ay=self.ay + other[1])
+
+    def __sub__(self, other: Union["Acceleration2D", tuple, list]):
+        if isinstance(other, Acceleration2D):
+            return Acceleration2D(ax=self.ax - other.ax, ay=self.ay - other.ay)
+        else:
+            return Acceleration2D(ax=self.ax - other[0], ay=self.ay - other[1])
+
+    def __mul__(self, other: float | int | complex):
+        return Acceleration2D(ax=self.ax * other, ay=self.ay * other)
+
+    def __str__(self):
+        return f"Acceleration2D ax={self.ax}, ay={self.ay}"
+
+
+@dataclasses.dataclass
 class Rotation2D(Component):
     _x: float = 0
 

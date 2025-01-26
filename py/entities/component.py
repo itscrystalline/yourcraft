@@ -31,12 +31,12 @@ class Component(abc.ABC):
             if __kwargs.__len__() == 0:
                 return
             for __key, __value in __kwargs.items():
-                self.__dict__.__setitem__(k=__key, v=__value)
+                self.__dict__[__key] = __value
         elif isinstance(__dict, dict) or isinstance(__dict.__class__, type) and issubclass(__dict.__class__, dict):
             if __kwargs.__len__() != 0:
                 raise ValueError("__kwargs.__len__() is not 0")
             for __key, __value in __dict:
-                self.__dict__.__setitem__(k=__key, v=__value)
+                self.__dict__[__key] = __value
         else:
             raise TypeError("__dict is not dict nor subclass of dict")
 

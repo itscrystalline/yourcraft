@@ -30,13 +30,16 @@ BLUE = (0, 0, 255)
 currentPlayer = classic_entity.Player()
 currentPlayer.keys = [pygame.K_w,pygame.K_a,pygame.K_s,pygame.K_d,pygame.K_e,pygame.K_q]
 position2D = currentPlayer.getComponent("transform2D").getVariable("position")
-speed = 0.1
+speed = 100
 
 # World
-WorldSurface = pygame.Surface((screen_width, screen_height))
-WorldSurface.fill(WHITE)
+WorldSurface = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
 World = {}
+WorldRect = WorldSurface.get_rect()
+WorldPosition = classic_component.Position2D()
+WorldDelta = classic_component.Velocity2D()
 # Format as (x, y) : int of block type
+
 
 # Block Types (In dev)
 BlockType = [(0,0,0),(255,0,0),(0,255,0),(0,0,255),(255,255,0),(255,0,255),(0,255,255),(255,255,255)]
@@ -45,6 +48,7 @@ BlockType = [(0,0,0),(255,0,0),(0,255,0),(0,0,255),(255,255,0),(255,0,255),(0,25
 def main():
     running = True
     while running:
+        dt = clock.tick()/1000
         for event in pygame.event.get():
             match event.type:
                 case pygame.QUIT:
@@ -54,33 +58,55 @@ def main():
                     continue
 
         # Update movement / controls
+        movement_update = False
+        WorldDelta.setVariable(vx=0, vy=0)
         keys = pygame.key.get_pressed()
-        if keys[currentPlayer.keys[0]]:
-            position2D.y -= 1 * speed
-        if keys[currentPlayer.keys[1]]:
-            position2D.x -= 1 * speed
-        if keys[currentPlayer.keys[2]]:
-            position2D.y += 1 * speed
-        if keys[currentPlayer.keys[3]]:
-            position2D.x += 1 * speed
-        if keys[currentPlayer.keys[4]]:
-            World[(position2D.x//10*10, position2D.y//10*10+10)] = 2
-            pygame.draw.rect(WorldSurface, BlockType[2], (position2D.x//10*10, position2D.y//10*10+10, 10, 10))
-        if keys[currentPlayer.keys[5]]:
-            pass
 
-        # # Reset/Clear screen
-        # screen.fill(WHITE)
-        # # No longer needed, as we draw world instead
+        posNow = (position2D.x//10*10+screen_width/2, position2D.y//10*10+10+screen_height/2)
+
+        if keys[currentPlayer.keys[0]]:
+            position2D.y -= speed * dt
+            WorldDelta.vy -= speed * dt
+            movement_update = True
+        if keys[currentPlayer.keys[1]]:
+            position2D.x -= speed * dt
+            WorldDelta.vx -= speed * dt
+            movement_update = True
+        if keys[currentPlayer.keys[2]]:
+            position2D.y += speed * dt
+            WorldDelta.vy += speed * dt
+            movement_update = True
+        if keys[currentPlayer.keys[3]]:
+            position2D.x += speed * dt
+            WorldDelta.vx += speed * dt
+            movement_update = True
+        if keys[currentPlayer.keys[4]]:
+            World[posNow] = 2
+            pygame.draw.rect(WorldSurface, BlockType[2], (posNow[0],posNow[1], 10, 10))
+        if keys[currentPlayer.keys[5]]:
+            if World.get(posNow) is not None:
+                del World[posNow]
+                pygame.draw.rect(WorldSurface,(0,0,0,0), (posNow[0],posNow[1], 10, 10))
+
+        # Reset screen
+        screen.fill((130,200,229))
+        # Bring back because we need sky lol
+
+        # Move world
+        if movement_update:
+            WorldPosition.x -= WorldDelta.vx
+            WorldPosition.y -= WorldDelta.vy
+            WorldRect.x = WorldPosition.x
+            WorldRect.y = WorldPosition.y
+
 
         # Draw world
-        screen.blit(WorldSurface, (0, 0))
+        screen.blit(WorldSurface, WorldRect.topleft)
 
         # Draw player
-        pygame.draw.rect(screen, BLUE, (position2D.x, position2D.y, 10, 20))
+        pygame.draw.rect(screen, BLUE, (screen_width/2-5, screen_height/2-10, 10, 20))
 
         # Debug FPS
-        clock.tick()
         screen.blit(font.render(f"{clock.get_fps().__format__('.2f')} FPS", 1, (0,0,0)),(0,0))
 
         # Update the display
