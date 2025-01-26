@@ -1,8 +1,11 @@
-use std::time::Instant;
-use crate::network::ClientConnection;
-use log::{debug, info};
+use crate::network::Packet;
+use crate::network::{ClientConnection, PacketTypes, ServerUpdateBlock};
+use log::{debug, error, info};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::io;
+use std::time::Instant;
+use tokio::net::UdpSocket;
 
 #[derive(Debug, Clone)]
 pub enum WorldError {
@@ -20,7 +23,10 @@ impl std::fmt::Display for WorldError {
             WorldError::PlaceOutOfLoadedChunk => write!(f, "place out of loaded chunk"),
             WorldError::ChunkAlreadyLoaded => write!(f, "chunk already loaded"),
             WorldError::ChunkAlreadyUnloaded => write!(f, "chunk already loaded"),
-            WorldError::MismatchedChunkSize => write!(f, "Mismatched chunk size, both width and height must be a multiple of chunk_size"),
+            WorldError::MismatchedChunkSize => write!(
+                f,
+                "Mismatched chunk size, both width and height must be a multiple of chunk_size"
+            ),
         }
     }
 }
@@ -85,7 +91,11 @@ impl World {
                 })
                 .collect();
 
-            info!("Generated {} chunks in {:?}", width_chunks * height_chunks, start.elapsed());
+            info!(
+                "Generated {} chunks in {:?}",
+                width_chunks * height_chunks,
+                start.elapsed()
+            );
             Ok(World {
                 width,
                 height,
@@ -98,12 +108,17 @@ impl World {
             })
         }
     }
-    
-    pub fn generate_flat(width: u32, height: u32, chunk_size: u32, grass_level: u32) -> Result<World, WorldError> {
+
+    pub fn generate_flat(
+        width: u32,
+        height: u32,
+        chunk_size: u32,
+        grass_level: u32,
+    ) -> Result<World, WorldError> {
         let mut empty_world = World::generate_empty(width, height, chunk_size)?;
 
         let start = Instant::now();
-        
+
         if grass_level != 0 {
             for idx in (0..width * (grass_level - 1)) {
                 let x = idx % width;
@@ -114,8 +129,13 @@ impl World {
         for x in (0..width) {
             empty_world.set_block(x, grass_level, Block::Grass)?
         }
-        
-        info!("filled {} * {} area with grass and stone {:?}", width, grass_level, start.elapsed());
+
+        info!(
+            "filled {} * {} area with grass and stone {:?}",
+            width,
+            grass_level,
+            start.elapsed()
+        );
         Ok(empty_world)
     }
 
@@ -185,9 +205,11 @@ impl World {
     }
 
     pub fn unload_all_for(&mut self, player_loading_id: u32) {
-        self.player_loaded.par_iter_mut().for_each(|players_loading_chunk| {
-            players_loading_chunk.retain(|&con| player_loading_id != con);
-        });
+        self.player_loaded
+            .par_iter_mut()
+            .for_each(|players_loading_chunk| {
+                players_loading_chunk.retain(|&con| player_loading_id != con);
+            });
     }
 
     pub fn get_list_of_players_loading_chunk(
@@ -205,7 +227,7 @@ impl World {
         Ok(players_loading)
     }
 
-    pub fn set_block(&mut self, pos_x: u32, pos_y: u32, block: Block) -> Result<(), WorldError> {
+    fn set_block(&mut self, pos_x: u32, pos_y: u32, block: Block) -> Result<(), WorldError> {
         self.check_out_of_bounds_block(pos_x, pos_y)?;
 
         let (chunk_x, chunk_y) = self.get_chunk_block_is_in(pos_x, pos_y)?;
@@ -218,16 +240,60 @@ impl World {
         Ok(())
     }
 
+    pub async fn set_block_and_notify(
+        &mut self,
+        socket: &UdpSocket,
+        pos_x: u32,
+        pos_y: u32,
+        block: Block,
+    ) -> io::Result<Result<(), WorldError>> {
+        macro_rules! double_unwrap {
+            ($to_match: expr) => {
+                match $to_match {
+                    Ok(ret) => ret,
+                    Err(e) => return Ok(Err(e)),
+                }
+            };
+        }
+        macro_rules! ok {
+            () => {
+                Ok(Ok(()))
+            };
+        }
+
+        double_unwrap!(self.set_block(pos_x, pos_y, block.into()));
+        let (chunk_x, chunk_y) = double_unwrap!(self.get_chunk_block_is_in(pos_x, pos_y));
+        let players_loading =
+            double_unwrap!(self.get_list_of_players_loading_chunk(chunk_x, chunk_y));
+        let response = ServerUpdateBlock {
+            block: block.into(),
+            x: pos_x,
+            y: pos_y,
+        };
+
+        for player in players_loading {
+            encode_and_send!(
+                PacketTypes::ServerUpdateBlock,
+                response.clone(),
+                socket,
+                player.addr
+            );
+        }
+
+        ok!()
+    }
+
     pub fn get_chunk_block_is_in(&self, pos_x: u32, pos_y: u32) -> Result<(u32, u32), WorldError> {
         self.check_out_of_bounds_block(pos_x, pos_y)?;
         let chunk_x = pos_x / self.chunk_size;
         let chunk_y = pos_y / self.chunk_size;
         Ok((chunk_x, chunk_y))
     }
-    
-    pub fn tick(&mut self) {
+
+    pub async fn tick(&mut self, socket: &UdpSocket) -> io::Result<()> {
         // todo
         // tick player collisions, block updates, etc.
+        Ok(())
     }
 }
 

@@ -157,6 +157,7 @@ macro_rules! unwrap_packet_or_ignore {
     };
 }
 
+#[macro_export]
 macro_rules! encode_and_send {
     ($packet_type: expr, $packet: expr, $socket: expr, $addr: expr) => {
         let encoded = Packet::encode($packet_type, $packet).unwrap();
@@ -164,7 +165,7 @@ macro_rules! encode_and_send {
     };
 }
 
-pub async fn network_handler(
+pub async fn incoming_packet_handler(
     socket: &UdpSocket,
     buf: &mut [u8],
     world: &mut World,
@@ -224,33 +225,23 @@ async fn process_client_packet(
         }
         PacketTypes::ClientPlaceBlock => {
             let place_block_packet: ClientPlaceBlock = unwrap_packet_or_ignore!(packet);
-            match world.set_block(
-                place_block_packet.x,
-                place_block_packet.y,
-                place_block_packet.block.into(),
-            ) {
-                Ok(_) => {
-                    let (chunk_x, chunk_y) = world
-                        .get_chunk_block_is_in(place_block_packet.x, place_block_packet.y)
-                        .unwrap();
-                    let players_loading = world
-                        .get_list_of_players_loading_chunk(chunk_x, chunk_y)
-                        .unwrap();
-                    let response = ServerUpdateBlock {
-                        block: place_block_packet.block,
-                        x: place_block_packet.x,
-                        y: place_block_packet.y,
-                    };
-                    
-                    for player in players_loading {
-                        encode_and_send!(PacketTypes::ServerUpdateBlock, response.clone(), socket, player.addr);
-                    }
-                }
-                Err(e) => {
+            match world
+                .set_block_and_notify(
+                    socket,
+                    place_block_packet.x,
+                    place_block_packet.y,
+                    place_block_packet.block.into(),
+                )
+                .await
+            {
+                Ok(res) => res.unwrap_or_else(|e| {
                     error!(
-                        "cannot place block at ({}, {}): {:?}",
+                        "cannot place block at ({}, {}): {}",
                         place_block_packet.x, place_block_packet.y, e
-                    );
+                    )
+                }),
+                Err(e) => {
+                    error!("error propagating world changes to clients: {e}")
                 }
             };
         }

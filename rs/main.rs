@@ -6,6 +6,7 @@ use log::{error, info};
 use crate::world::{Block, World};
 use tokio::time::{self, Duration};
 
+#[macro_use]
 mod network;
 mod world;
 mod player;
@@ -46,8 +47,8 @@ async fn main() -> io::Result<()> {
     loop {
         clock.tick().await;
 
-        network::network_handler(&socket, &mut buf, &mut world).await?;
-        world.tick();
+        network::incoming_packet_handler(&socket, &mut buf, &mut world).await?;
+        world.tick(&socket).await?;
     }
 }
 
