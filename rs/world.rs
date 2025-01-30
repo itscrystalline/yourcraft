@@ -128,13 +128,13 @@ impl World {
         let start = Instant::now();
 
         if grass_level != 0 {
-            for idx in (0..width * (grass_level - 1)) {
+            for idx in 0..width * (grass_level - 1) {
                 let x = idx % width;
                 let y = idx / width;
                 empty_world.set_block(x, y, Block::Stone)?
             }
         }
-        for x in (0..width) {
+        for x in 0..width {
             empty_world.set_block(x, grass_level, Block::Grass)?
         }
 

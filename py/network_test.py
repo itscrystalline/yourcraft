@@ -5,6 +5,8 @@ HELLO = 1
 PLAYER_COORDINATES = 2
 GOODBYE = 10
 KICK = 16
+HEARTBEAT_SERVER = 17
+HEARTBEAT_CLIENT = 18
 
 class Packet:
     def __init__(self, packet_type):
@@ -41,6 +43,11 @@ class Goodbye(Packet):
     def __init__(self):
         super().__init__(GOODBYE)
 
+
+class Heartbeat(Packet):
+    def __init__(self):
+        super().__init__(HEARTBEAT_CLIENT)
+
 class PlayerCoordinates(Packet):
     def __init__(self, x, y):
         super().__init__(PLAYER_COORDINATES)
@@ -48,12 +55,16 @@ class PlayerCoordinates(Packet):
         self.y = y
 
 if __name__ == "__main__":
+    respond_to_heartbeat = True if input("respond to heartbeat?") == "y" else False
     conn = ServerConnection("127.0.0.1")
 
     conn.send(Hello("test"))
     print(conn.recv())
     while True:
         receiving = conn.recv()
-        if receiving['t'] == 16:
+        if receiving['t'] == KICK:
             print("kicked because", receiving['data']['msg'])
             exit(0)
+        elif receiving['t'] == HEARTBEAT_SERVER:
+            print("heartbeat received")
+            conn.send(Heartbeat()) if respond_to_heartbeat else None

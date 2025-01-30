@@ -1,12 +1,9 @@
-use crate::world::{Block, World};
+use crate::world::World;
 use clap::{Parser, Subcommand};
 use log::{error, info};
 use std::io;
 use std::process::exit;
 use tokio::net::UdpSocket;
-use tokio::signal;
-use tokio::signal::unix::{signal, SignalKind};
-use tokio::sync::mpsc;
 use tokio::time::{self, Duration};
 
 #[macro_use]
@@ -44,7 +41,8 @@ async fn main() -> io::Result<()> {
     let settings = Settings::parse();
     info!("Starting up with {:?}", settings);
 
-    let mut clock = time::interval(Duration::from_millis(20));
+    let mut world_tick = time::interval(Duration::from_millis(20));
+    let mut heartbeat_tick = time::interval(Duration::from_secs(10));
 
     let world_res = match settings.world_type {
         WorldType::Empty => World::generate_empty(
@@ -80,7 +78,10 @@ async fn main() -> io::Result<()> {
             packet = socket.recv_from(&mut buf) => {
                 network::incoming_packet_handler(&socket, &mut buf, &mut world, packet?).await?
             }
-            _ = clock.tick() => {
+            _ = heartbeat_tick.tick() => {
+                network::heartbeat(&socket, &mut world).await?;
+            }
+            _ = world_tick.tick() => {
                 world.tick(&socket).await?;
             }
         }

@@ -78,14 +78,17 @@ the reason this is done is to make sure that the server/client can decode all in
 ### Notice On Updates
 The client **must** request the server to load/unload chunks. the server **will only** broadcast block/player updates that are in the client's loaded area.
 
+The client must also respond to the server's heartbeat packets, else the connection is deemed "lost" and the client is
+kicked from the server.
+
 ### Packet ID List & content 
 ✅: fully implemented & tested, 🟨: implemented but not tested, ⬛: not implemented
 
 (Server, Client)
 ```
 0: Invalid Packet.
-1: [C2S] ClientHello (name: str)                                                           ✅✅
-2: [S2C] ServerSync (player_id: int, world_width: int, world_height: int, chunk_size: int) ✅✅
+1: [C2S] ClientHello (name: str)                                                           ✅⬛
+2: [S2C] ServerSync (player_id: int, world_width: int, world_height: int, chunk_size: int) ✅⬛
 3: [C2S] ClientRequestChunk (chunk_coords_x: int, chunk_coords_y: int)                     🟨⬛
 4: [S2C] ServerChunkResponse (chunk: Chunk, see world.rs for impl)                         🟨⬛
 5: [C2S] ClientUnloadChunk (chunk_coords_x: int, chunk_coords_y: int)                      🟨⬛
@@ -93,13 +96,15 @@ The client **must** request the server to load/unload chunks. the server **will 
 7: [S2C] ServerPlayerEnterLoaded (player_name: str, player_id: int)                        🟨⬛
 8: [S2C] ServerPlayerLeaveLoaded (player_name: str, player_id: int)                        🟨⬛
 9: [S2C] ServerPlayerLeave (player_name: str, player_id: int)                              🟨⬛
-10: [C2S] ClientGoodbye ()                                                                 ✅✅
+10: [C2S] ClientGoodbye ()                                                                 ✅⬛
 11: [C2S] ClientPlaceBlock (block: Block Enum as int, x: int, y: int)                      🟨⬛
 12: [S2C] ServerUpdateBlock (block: Block Enum as int, x: int, y: int)                     🟨⬛
 13: [C2S] ClientPlayerMoveX (pos_x: float)                                                 ⬛⬛
 14: [C2S] ClientPlayerJump ()                                                              ⬛⬛
 15: [S2C] ServerPlayerUpdatePos (player_id: int, pos_x: float, pos_y: float)               ⬛⬛
-16: [S2C] ServerKick (msg: str)                                                            ✅✅
+16: [S2C] ServerKick (msg: str)                                                            ✅⬛
+17: [S2C] ServerHeartbeat                                                                  ✅⬛
+18: [C2S] ClientHeartbeat                                                                  ✅⬛
 ```
 
 ### Lifecycle Overview
