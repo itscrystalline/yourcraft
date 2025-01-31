@@ -1,4 +1,4 @@
-use crate::world::World;
+use crate::world::{World, WorldError};
 
 #[derive(Debug, PartialEq)]
 pub struct Player {
@@ -11,8 +11,11 @@ impl Player {
         Player { x: 0.0, y: 0.0 }
     }
 
-    pub fn spawn_at(world: &World, x: u32) -> Self {
-        let highest = world.get_highest_block_at(x).unwrap();
-        Player { x: highest.0 as f32, y: highest.1 as f32}
+    pub fn spawn_at(world: &World, x: u32) -> Result<Self, WorldError> {
+        let highest = world.get_highest_block_at(x)?;
+        Ok(Player {
+            x: highest.0 as f32,
+            y: highest.1 as f32,
+        })
     }
 }

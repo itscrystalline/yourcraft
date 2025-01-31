@@ -43,18 +43,24 @@ impl ClientConnection {
             name,
             server_player: Player::spawn_at_origin(),
             id: rng.next_u32(),
-            connection_alive: true
+            connection_alive: true,
         }
     }
 
-    pub fn new_at(addr: SocketAddr, world: &World, x: u32, name: String) -> ClientConnection {
+    pub fn new_at(
+        addr: SocketAddr,
+        world: &World,
+        x: u32,
+        name: String,
+    ) -> Result<ClientConnection, WorldError> {
         let mut rng = rand::rng();
-        ClientConnection {
-            addr, name,
-            server_player: Player::spawn_at(world, x),
+        Ok(ClientConnection {
+            addr,
+            name,
+            server_player: Player::spawn_at(world, x)?,
             id: rng.next_u32(),
-            connection_alive: true
-        }
+            connection_alive: true,
+        })
     }
 }
 
@@ -258,7 +264,13 @@ async fn process_client_packet(
         PacketTypes::ClientHello => {
             let hello_packet: ClientHello = unwrap_packet_or_ignore!(packet);
             info!("{} joined the server!", hello_packet.name);
-            let connection = ClientConnection::new_at(addr, world, 0, hello_packet.name);
+            let connection = match ClientConnection::new_at(addr, world, 0, hello_packet.name) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    error!("cannot spawn player: {e}");
+                    return Ok(());
+                }
+            };
             let spawn_block_pos = (
                 connection.server_player.x.round() as u32,
                 connection.server_player.y.round() as u32,
