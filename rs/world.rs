@@ -12,8 +12,10 @@ use tokio::net::UdpSocket;
 pub enum WorldError {
     #[error("World width and height can only be a multiple of chunk_size!")]
     MismatchedChunkSize,
-    #[error("block/chunk position ({0}, {1}) out of world bounds")]
-    OutOfBounds(u32, u32),
+    #[error("block position ({0}, {1}) out of world bounds")]
+    OutOfBoundsBlock(u32, u32),
+    #[error("chunk position ({0}, {1}) out of world bounds")]
+    OutOfBoundsChunk(u32, u32),
     #[error("player interaction outside loaded chunk")]
     PlaceOutOfLoadedChunk,
     #[error("chunk is already loaded")]
@@ -134,14 +136,14 @@ impl World {
 
     fn check_out_of_bounds_chunk(&self, chunk_x: u32, chunk_y: u32) -> Result<(), WorldError> {
         if chunk_x >= self.width_chunks || chunk_y >= self.height_chunks {
-            Err(WorldError::OutOfBounds(chunk_x, chunk_y))
+            Err(WorldError::OutOfBoundsChunk(chunk_x, chunk_y))
         } else {
             Ok(())
         }
     }
     fn check_out_of_bounds_block(&self, x: u32, y: u32) -> Result<(), WorldError> {
         if x >= self.width || y >= self.height {
-            Err(WorldError::OutOfBounds(x, y))
+            Err(WorldError::OutOfBoundsBlock(x, y))
         } else {
             Ok(())
         }
