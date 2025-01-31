@@ -3,9 +3,9 @@ use crate::network::{Packet, ServerPlayerLeave, ServerPlayerLeaveLoaded};
 use log::{debug, error, info};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 use std::io;
 use std::time::Instant;
+use thiserror::Error;
 use tokio::net::UdpSocket;
 
 #[derive(Debug, Error)]
@@ -113,7 +113,7 @@ impl World {
         let start = Instant::now();
 
         if grass_level != 0 {
-            for idx in 0..width * (grass_level - 1) {
+            for idx in 0..width * grass_level {
                 let x = idx % width;
                 let y = idx / width;
                 empty_world.set_block(x, y, Block::Stone)?
@@ -133,14 +133,14 @@ impl World {
     }
 
     fn check_out_of_bounds_chunk(&self, chunk_x: u32, chunk_y: u32) -> Result<(), WorldError> {
-        if chunk_x > self.width / self.chunk_size || chunk_y > self.height / self.chunk_size {
+        if chunk_x > self.width_chunks || chunk_y > self.height_chunks {
             Err(WorldError::OutOfBounds(chunk_x, chunk_y))
         } else {
             Ok(())
         }
     }
     fn check_out_of_bounds_block(&self, x: u32, y: u32) -> Result<(), WorldError> {
-        if x >= self.width && y >= self.height {
+        if x >= self.width || y >= self.height {
             Err(WorldError::OutOfBounds(x, y))
         } else {
             Ok(())
@@ -149,12 +149,12 @@ impl World {
 
     pub fn get_chunk_mut(&mut self, chunk_x: u32, chunk_y: u32) -> Result<&mut Chunk, WorldError> {
         self.check_out_of_bounds_chunk(chunk_x, chunk_y)?;
-        Ok(&mut self.chunks[(chunk_y * self.height_chunks + chunk_x) as usize])
+        Ok(&mut self.chunks[(chunk_y * self.width_chunks + chunk_x) as usize])
     }
 
     pub fn get_chunk(&self, chunk_x: u32, chunk_y: u32) -> Result<&Chunk, WorldError> {
         self.check_out_of_bounds_chunk(chunk_x, chunk_y)?;
-        Ok(&self.chunks[(chunk_y * self.height_chunks + chunk_x) as usize])
+        Ok(&self.chunks[(chunk_y * self.width_chunks + chunk_x) as usize])
     }
 
     pub fn mark_chunk_loaded_by_id(
@@ -361,17 +361,26 @@ impl World {
         Ok((chunk_x, chunk_y))
     }
 
-    pub fn get_highest_block_at(&self, x: u32) -> Result<(u32, u32), WorldError>{
-        let y: Vec<u32> = (0..self.height - 1).collect();
-        let top_block_window = y.par_windows(2).find_any(|window| {
-            let block_next = self.get_block(x, window[1]).unwrap(); // todo: propagate errors correctly
-            let block_prev = self.get_block(x, window[0]).unwrap();
-            
-            block_next == Block::Air && block_prev != Block::Air
+    pub fn get_highest_block_at(&self, x: u32) -> Result<(u32, u32), WorldError> {
+        self.check_out_of_bounds_block(x, 0)?;
+
+        let y: Vec<u32> = (0..self.height).collect();
+        let slice: Result<Vec<Block>, WorldError> =
+            y.par_iter().map(|y| self.get_block(x, *y)).collect();
+        debug!("world slice at x: {x}, {slice:#?}");
+        let top_block_window = y.par_windows(2).find_last(|window| {
+            let block_next = self.get_block(x, window[1]);
+            let block_prev = self.get_block(x, window[0]);
+
+            if let (Ok(block_next), Ok(block_prev)) = (block_next, block_prev) {
+                block_next == Block::Air && block_prev != Block::Air
+            } else {
+                false
+            }
         });
         Ok(match top_block_window {
             Some(window) => (x, window[0]),
-            None => (x, 0)
+            None => (x, 0),
         })
     }
 
