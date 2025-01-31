@@ -53,18 +53,17 @@ macro_rules! define_blocks {
             $($name = $id),*
         }
 
-        impl Into<Block> for u8 {
-            fn into(self) -> Block {
-                match self {
+        impl From<u8> for Block {
+            fn from(id: u8) -> Self {
+                match id {
                     $($id => Block::$name),*,
                     _ => Block::Air,
                 }
             }
         }
 
-        impl Into<u8> for Block {
-            fn into(self) -> u8 {self as u8
-            }
+        impl From<Block> for u8 {
+            fn from(block: Block) -> u8 { block as u8 }
         }
     };
 }
@@ -174,10 +173,10 @@ impl World {
         {
             true => Err(WorldError::ChunkAlreadyLoaded),
             false => {
-                if let Some(_) = self
+                if self
                     .players
-                    .iter()
-                    .find(|&player| player.id == player_loading_id)
+                    .par_iter()
+                    .any(|player| player.id == player_loading_id)
                 {
                     players_loading_chunk.push(player_loading_id);
                 }
@@ -254,7 +253,7 @@ impl World {
         pos_y: u32,
         block: Block,
     ) -> Result<(), WorldError> {
-        self.set_block(pos_x, pos_y, block.into())?;
+        self.set_block(pos_x, pos_y, block)?;
         let (chunk_x, chunk_y) = self.get_chunk_block_is_in(pos_x, pos_y)?;
         let players_loading = self.get_list_of_players_loading_chunk(chunk_x, chunk_y)?;
         let response = ServerUpdateBlock {
