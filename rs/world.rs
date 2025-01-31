@@ -290,23 +290,16 @@ impl World {
         Ok(())
     }
 
-    pub async fn kick(
-        &mut self,
-        socket: &UdpSocket,
-        id: u32,
-        msg: Option<String>,
-    ) -> io::Result<()> {
+    pub async fn kick(&mut self, socket: &UdpSocket, id: u32, msg: Option<&str>) -> io::Result<()> {
         match self.players.iter().position(|x| x.id == id) {
             None => error!("Kicking player that hasn't joined! ({})", id),
             Some(idx) => {
                 let connection = self.players.swap_remove(idx);
-                let kick_msg = msg.unwrap_or(String::from("No kick message provided"));
+                let kick_msg = msg.unwrap_or("No kick message provided");
                 self.unload_all_for(connection.id);
                 info!(
                     "{} (addr: {}) kicked from sever! ({})",
-                    connection.name,
-                    connection.addr,
-                    kick_msg.clone()
+                    connection.name, connection.addr, kick_msg
                 );
 
                 let last_location = (
@@ -332,7 +325,9 @@ impl World {
                     player_id: connection.id,
                 };
 
-                let kick = ServerKick { msg: kick_msg };
+                let kick = ServerKick {
+                    msg: kick_msg.into(),
+                };
                 encode_and_send!(PacketTypes::ServerKick, kick, socket, connection.addr);
 
                 for player in self.players.iter() {

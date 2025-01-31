@@ -240,7 +240,7 @@ pub async fn heartbeat(socket: &UdpSocket, world: &mut World) -> io::Result<()> 
         info!("Kicking {} players due to inactivity.", inactive.len());
         for id in inactive {
             world
-                .kick(socket, id, Some(String::from("Kicked due to inactivity.")))
+                .kick(socket, id, Some("Kicked due to inactivity."))
                 .await?;
         }
     }
