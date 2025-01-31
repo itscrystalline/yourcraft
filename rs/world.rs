@@ -233,6 +233,18 @@ impl World {
         Ok(())
     }
 
+    fn get_block(&self, pos_x: u32, pos_y: u32) -> Result<Block, WorldError> {
+        self.check_out_of_bounds_block(pos_x, pos_y)?;
+
+        let (chunk_x, chunk_y) = self.get_chunk_block_is_in(pos_x, pos_y)?;
+        let inside_x = pos_x - chunk_x * self.chunk_size;
+        let inside_y = pos_y - chunk_y * self.chunk_size;
+
+        let chunk = self.get_chunk(chunk_x, chunk_y)?;
+
+        Ok(chunk.get_block(inside_x, inside_y))
+    }
+
     pub async fn set_block_and_notify(
         &mut self,
         socket: &UdpSocket,
@@ -349,6 +361,20 @@ impl World {
         Ok((chunk_x, chunk_y))
     }
 
+    pub fn get_highest_block_at(&self, x: u32) -> Result<(u32, u32), WorldError>{
+        let y: Vec<u32> = (0..self.height - 1).collect();
+        let top_block_window = y.par_windows(2).find_any(|window| {
+            let block_next = self.get_block(x, window[1]).unwrap(); // todo: propagate errors correctly
+            let block_prev = self.get_block(x, window[0]).unwrap();
+            
+            block_next == Block::Air && block_prev != Block::Air
+        });
+        Ok(match top_block_window {
+            Some(window) => (x, window[0]),
+            None => (x, 0)
+        })
+    }
+
     pub async fn tick(&mut self, socket: &UdpSocket) -> io::Result<()> {
         // todo
         // tick player collisions, block updates, etc.
@@ -374,6 +400,10 @@ impl Chunk {
             self.chunk_x, self.chunk_y, idx, block
         );
         self
+    }
+
+    fn get_block(&self, chunk_pos_x: u32, chunk_pos_y: u32) -> Block {
+        self.blocks[(chunk_pos_y * self.size + chunk_pos_x) as usize]
     }
 }
 

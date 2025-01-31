@@ -43,7 +43,17 @@ impl ClientConnection {
             name,
             server_player: Player::spawn_at_origin(),
             id: rng.next_u32(),
-            connection_alive: true,
+            connection_alive: true
+        }
+    }
+
+    pub fn new_at(addr: SocketAddr, world: &World, x: u32, name: String) -> ClientConnection {
+        let mut rng = rand::rng();
+        ClientConnection {
+            addr, name,
+            server_player: Player::spawn_at(world, x),
+            id: rng.next_u32(),
+            connection_alive: true
         }
     }
 }
@@ -97,7 +107,9 @@ define_packets!(
         player_id: u32,
         world_width: u32,
         world_height: u32,
-        chunk_size: u32
+        chunk_size: u32,
+        spawn_x: f32,
+        spawn_y: f32,
     },
     ClientRequestChunk = 3 => ClientRequestChunk {
         chunk_coords_x: u32,
@@ -116,7 +128,9 @@ define_packets!(
     },
     ServerPlayerEnterLoaded = 7 => ServerPlayerEnterLoaded {
         player_name: String,
-        player_id: u32
+        player_id: u32,
+        pos_x: f32,
+        pos_y: f32,
     },
     ServerPlayerLeaveLoaded = 8 => ServerPlayerLeaveLoaded {
         player_name: String,
@@ -244,7 +258,7 @@ async fn process_client_packet(
         PacketTypes::ClientHello => {
             let hello_packet: ClientHello = unwrap_packet_or_ignore!(packet);
             info!("{} joined the server!", hello_packet.name);
-            let connection = ClientConnection::new(addr, hello_packet.name);
+            let connection = ClientConnection::new_at(addr, world, 0, hello_packet.name);
             let spawn_block_pos = (
                 connection.server_player.x.round() as u32,
                 connection.server_player.y.round() as u32,
@@ -255,6 +269,8 @@ async fn process_client_packet(
                 world_width: world.width,
                 world_height: world.height,
                 chunk_size: world.chunk_size,
+                spawn_x: connection.server_player.x,
+                spawn_y: connection.server_player.y,
             };
 
             encode_and_send!(PacketTypes::ServerSync, response, socket, addr);
@@ -274,6 +290,8 @@ async fn process_client_packet(
             let to_broadcast_chunk = ServerPlayerEnterLoaded {
                 player_name: connection.name.clone(),
                 player_id: connection.id,
+                pos_x: connection.server_player.x,
+                pos_y: connection.server_player.y,
             };
 
             for player in world.players.iter() {
