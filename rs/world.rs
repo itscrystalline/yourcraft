@@ -3,40 +3,25 @@ use crate::network::{Packet, ServerPlayerLeave, ServerPlayerLeaveLoaded};
 use log::{debug, error, info};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use std::io;
 use std::time::Instant;
 use tokio::net::UdpSocket;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum WorldError {
+    #[error("World width and height can only be a multiple of chunk_size!")]
     MismatchedChunkSize,
+    #[error("block/chunk position ({0}, {1}) out of world bounds")]
     OutOfBounds(u32, u32),
+    #[error("player interaction outside loaded chunk")]
     PlaceOutOfLoadedChunk,
+    #[error("chunk is already loaded")]
     ChunkAlreadyLoaded,
+    #[error("chunk is already unloaded")]
     ChunkAlreadyUnloaded,
-    NetworkError(io::Error),
-}
-
-impl std::fmt::Display for WorldError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            WorldError::OutOfBounds(x, y) => write!(f, "position ({}, {}) out of bounds", x, y),
-            WorldError::PlaceOutOfLoadedChunk => write!(f, "place out of loaded chunk"),
-            WorldError::ChunkAlreadyLoaded => write!(f, "chunk already loaded"),
-            WorldError::ChunkAlreadyUnloaded => write!(f, "chunk already loaded"),
-            WorldError::MismatchedChunkSize => write!(
-                f,
-                "Mismatched chunk size, both width and height must be a multiple of chunk_size"
-            ),
-            WorldError::NetworkError(err) => err.fmt(f),
-        }
-    }
-}
-
-impl From<io::Error> for WorldError {
-    fn from(err: io::Error) -> WorldError {
-        WorldError::NetworkError(err)
-    }
+    #[error("error propagating changes to clients: {0}")]
+    NetworkError(#[from] io::Error),
 }
 
 #[derive(Debug)]
