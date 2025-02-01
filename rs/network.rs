@@ -80,18 +80,18 @@ macro_rules! define_packets {
             $($name = $value),*
         }
 
-        impl Into<u8> for PacketTypes {
-            fn into(self) -> u8 {
-                self as u8
-            }
-        }
-
-        impl Into<PacketTypes> for u8 {
-            fn into(self) -> PacketTypes {
-                match self {
+        impl From<u8> for PacketTypes {
+            fn from(id: u8) -> PacketTypes {
+                match id {
                     $($value => PacketTypes::$name),*,
                     _ => PacketTypes::Invalid,
                 }
+            }
+        }
+
+        impl From<PacketTypes> for u8 {
+            fn from(packet: PacketTypes) -> u8 {
+                packet as u8
             }
         }
 
