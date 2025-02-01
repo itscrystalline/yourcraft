@@ -28,7 +28,7 @@ class ServerConnection:
         self.socket.sendto(packet.serialize(), self.ip_port)
 
     def recv(self):
-        packet = pickle.loads(self.socket.recv(1024))
+        packet = pickle.loads(self.socket.recv(1024*16))
         packet['data'] = pickle.loads(packet['data'])
         return packet
 
@@ -48,23 +48,26 @@ class Heartbeat(Packet):
     def __init__(self):
         super().__init__(HEARTBEAT_CLIENT)
 
-class PlayerCoordinates(Packet):
+class ClientRequestChunk (Packet):
     def __init__(self, x, y):
-        super().__init__(PLAYER_COORDINATES)
-        self.x = x
-        self.y = y
+        super().__init__(3)
+        self.chunk_coords_x = x
+        self.chunk_coords_y = y
 
 if __name__ == "__main__":
     respond_to_heartbeat = True if input("respond to heartbeat?") == "y" else False
     conn = ServerConnection("127.0.0.1")
 
     conn.send(Hello("test"))
-    print(conn.recv())
+    INIT_DATA = conn.recv()
+
     while True:
         receiving = conn.recv()
+        print(receiving)
         if receiving['t'] == KICK:
             print("kicked because", receiving['data']['msg'])
             exit(0)
         elif receiving['t'] == HEARTBEAT_SERVER:
             print("heartbeat received")
             conn.send(Heartbeat()) if respond_to_heartbeat else None
+        conn.send(ClientRequestChunk (0, 0))

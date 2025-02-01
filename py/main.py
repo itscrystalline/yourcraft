@@ -6,6 +6,7 @@ import entities
 import sys
 import threading
 import multiprocessing
+import math
 
 # Initialize Pygame
 pygame.init()
@@ -33,12 +34,10 @@ position2D = currentPlayer.getComponent("transform2D").getVariable("position")
 speed = 100
 
 # World
-WorldSurface = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
 World = {}
-WorldRect = WorldSurface.get_rect()
 WorldPosition = classic_component.Position2D()
 WorldDelta = classic_component.Velocity2D()
-# Format as (x, y) : int of block type
+# Format as { (x, y) of chunk : chunk data->{ coord in chunk (x, y) : block } }
 
 
 # Block Types (In dev)
@@ -62,7 +61,8 @@ def main():
         WorldDelta.setVariable(vx=0, vy=0)
         keys = pygame.key.get_pressed()
 
-        posNow = (position2D.x//10*10+screen_width/2, position2D.y//10*10+10+screen_height/2)
+        chunkCoord = (int(position2D.x//160), int(position2D.y//160))
+        chunkPos = (int(position2D.x%160//10*10), int(position2D.y%160//10*10))
 
         if keys[currentPlayer.keys[0]]:
             position2D.y -= speed * dt
@@ -81,12 +81,14 @@ def main():
             WorldDelta.vx += speed * dt
             movement_update = True
         if keys[currentPlayer.keys[4]]:
-            World[posNow] = 2
-            pygame.draw.rect(WorldSurface, BlockType[2], (posNow[0],posNow[1], 10, 10))
+            if chunkCoord not in World:
+                World[chunkCoord] = {}
+            World[chunkCoord][chunkPos] = 2
         if keys[currentPlayer.keys[5]]:
-            if World.get(posNow) is not None:
-                del World[posNow]
-                pygame.draw.rect(WorldSurface,(0,0,0,0), (posNow[0],posNow[1], 10, 10))
+            if World.get(chunkCoord).get(chunkPos) is not None:
+                del World[chunkCoord][chunkPos]
+                if World[chunkCoord].__len__() == 0:
+                    del World[chunkCoord]
 
         # Reset screen
         screen.fill((130,200,229))
@@ -96,12 +98,21 @@ def main():
         if movement_update:
             WorldPosition.x -= WorldDelta.vx
             WorldPosition.y -= WorldDelta.vy
-            WorldRect.x = WorldPosition.x
-            WorldRect.y = WorldPosition.y
-
 
         # Draw world
-        screen.blit(WorldSurface, WorldRect.topleft)
+        dChunkX = math.ceil(screen_width/320)+1
+        dChunkY = math.ceil(screen_height/320)+1
+
+        # Choose visible chunks
+        for loadChunkX in range(chunkCoord[0] - dChunkX, chunkCoord[0] + dChunkX):
+            for loadChunkY in range(chunkCoord[1] - dChunkY, chunkCoord[1] + dChunkY):
+                loadChunk = (loadChunkX, loadChunkY)
+                if World.get(loadChunk):
+                    # Draw blocks
+                    for blockPos, blockType in World[loadChunk].items():
+                        blockScreenPos = (loadChunk[0] * 160 + blockPos[0] + WorldPosition.x + screen_width / 2,
+                                          loadChunk[1] * 160 + blockPos[1] + WorldPosition.y + 10 + screen_height / 2)
+                        pygame.draw.rect(screen, BlockType[blockType], (blockScreenPos[0], blockScreenPos[1], 10, 10))
 
         # Draw player
         pygame.draw.rect(screen, BLUE, (screen_width/2-5, screen_height/2-10, 10, 20))
