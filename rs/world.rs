@@ -36,6 +36,7 @@ pub struct World {
     height_chunks: u32,
     pub players: Vec<ClientConnection>,
     player_loaded: Vec<Vec<u32>>,
+    water_map: Vec<(u32, u32)>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -47,7 +48,7 @@ pub struct Chunk {
 }
 
 macro_rules! define_blocks {
-    ($($name:ident = $id:expr),* $(,)?) => {
+    ($($name:ident = ($id:expr, $solid:expr)),* $(,)?) => {
         #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
         pub enum Block {
             $($name = $id),*
@@ -65,6 +66,14 @@ macro_rules! define_blocks {
         impl From<Block> for u8 {
             fn from(block: Block) -> u8 { block as u8 }
         }
+
+
+        fn is_solid(block: Block) -> bool {
+            match block {
+                $(Block::$name => $solid),*
+            }
+        }
+
     };
 }
 
@@ -99,6 +108,7 @@ impl World {
                 height_chunks,
                 players: vec![],
                 player_loaded,
+                water_map: vec![],
             })
         }
     }
@@ -221,7 +231,7 @@ impl World {
         Ok(players_loading)
     }
 
-    fn set_block(&mut self, pos_x: u32, pos_y: u32, block: Block) -> Result<(), WorldError> {
+    pub fn set_block(&mut self, pos_x: u32, pos_y: u32, block: Block) -> Result<(), WorldError> {
         self.check_out_of_bounds_block(pos_x, pos_y)?;
 
         let (chunk_x, chunk_y) = self.get_chunk_block_is_in(pos_x, pos_y)?;
@@ -234,7 +244,7 @@ impl World {
         Ok(())
     }
 
-    fn get_block(&self, pos_x: u32, pos_y: u32) -> Result<Block, WorldError> {
+    pub fn get_block(&self, pos_x: u32, pos_y: u32) -> Result<Block, WorldError> {
         self.check_out_of_bounds_block(pos_x, pos_y)?;
 
         let (chunk_x, chunk_y) = self.get_chunk_block_is_in(pos_x, pos_y)?;
@@ -380,9 +390,79 @@ impl World {
         })
     }
 
+    fn get_all_blockpos_of_type(&self, block_type: Block) -> Vec<(u32, u32)> {
+        self.chunks
+            .par_iter()
+            .filter_map(|chunk| {
+                let hits: Vec<(u32, u32)> = chunk
+                    .blocks
+                    .par_iter()
+                    .enumerate()
+                    .filter_map(|(idx, bl)| {
+                        if *bl == block_type {
+                            let (local_x, local_y) = chunk.pos_from_index(idx);
+                            let global_pos = (
+                                chunk.chunk_x * self.chunk_size + local_x,
+                                chunk.chunk_y * self.chunk_size + local_y,
+                            );
+                            Some(global_pos)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                Some(hits)
+            })
+            .flatten()
+            .collect()
+    }
+
+    async fn tick_water(&mut self, socket: &UdpSocket) -> Result<(), WorldError> {
+        let mut to_update: Vec<(u32, u32)> = vec![];
+        // OPTIMIZE: very naive impl
+        self.water_map.iter().for_each(|(bl_x, bl_y)| {
+            let pos_to_check = ((*bl_x, *bl_y - 1), (*bl_x - 1, *bl_y), (*bl_x + 1, *bl_y));
+            // todo: this *will* panic, fix later
+            let to_check = [
+                (
+                    self.get_block(pos_to_check.0 .0, pos_to_check.0 .1),
+                    pos_to_check.0,
+                ),
+                (
+                    self.get_block(pos_to_check.1 .0, pos_to_check.1 .1),
+                    pos_to_check.1,
+                ),
+                (
+                    self.get_block(pos_to_check.2 .0, pos_to_check.2 .1),
+                    pos_to_check.2,
+                ),
+            ];
+            to_check.iter().for_each(|(res, pos)| {
+                if let Ok(bl) = res {
+                    if !is_solid(*bl) && *bl != Block::Water {
+                        to_update.push(*pos);
+                    }
+                }
+            });
+        });
+        for pos in to_update {
+            self.set_block_and_notify(socket, pos.0, pos.1, Block::Water)
+                .await?;
+        }
+        Ok(())
+    }
+
     pub async fn tick(&mut self, socket: &UdpSocket) -> io::Result<()> {
-        // todo
-        // tick player collisions, block updates, etc.
+        let now = Instant::now();
+        self.water_map = self.get_all_blockpos_of_type(Block::Water);
+
+        match self.tick_water(socket).await {
+            Ok(_) => (),
+            Err(e) => {
+                error!("Error occurred while ticking water: {e}")
+            }
+        };
+        debug!("tick took {:?}.", now.elapsed());
         Ok(())
     }
 }
@@ -410,14 +490,19 @@ impl Chunk {
     fn get_block(&self, chunk_pos_x: u32, chunk_pos_y: u32) -> Block {
         self.blocks[(chunk_pos_y * self.size + chunk_pos_x) as usize]
     }
+
+    fn pos_from_index(&self, idx: usize) -> (u32, u32) {
+        let idx_u32 = idx as u32;
+        (idx_u32 % self.size, idx as u32 / self.size)
+    }
 }
 
 define_blocks! {
-    Air = 0,
-    Grass = 1,
-    Stone = 2,
-    Log = 3,
-    Leaves = 4,
-    Water = 5,
-    Wood = 6,
+    Air = (0, false),
+    Grass = (1, true),
+    Stone = (2, true),
+    Log = (3, true),
+    Leaves = (4, true),
+    Water = (5, false),
+    Wood = (6, true)
 }
