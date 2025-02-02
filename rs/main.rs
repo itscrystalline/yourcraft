@@ -65,9 +65,6 @@ async fn main() -> io::Result<()> {
         }
     };
 
-    // test
-    let _ = world.set_block(512, 255, world::Block::Water);
-
     let socket = UdpSocket::bind(format!("0.0.0.0:{}", settings.port)).await?;
     let mut buf = [0u8; 1024];
     info!("Listening on {}", socket.local_addr()?);
