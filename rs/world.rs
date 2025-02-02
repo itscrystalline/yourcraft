@@ -3,6 +3,7 @@ use crate::network::{Packet, ServerPlayerLeave, ServerPlayerLeaveLoaded};
 use log::{debug, error, info};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::io;
 use std::time::Instant;
 use thiserror::Error;
@@ -36,7 +37,7 @@ pub struct World {
     height_chunks: u32,
     pub players: Vec<ClientConnection>,
     player_loaded: Vec<Vec<u32>>,
-    water_map: Vec<(u32, u32)>,
+    to_update: HashSet<(u32, u32, Block)>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -49,7 +50,7 @@ pub struct Chunk {
 
 macro_rules! define_blocks {
     ($($name:ident = ($id:expr, $solid:expr)),* $(,)?) => {
-        #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
         pub enum Block {
             $($name = $id),*
         }
@@ -108,7 +109,7 @@ impl World {
                 height_chunks,
                 players: vec![],
                 player_loaded,
-                water_map: vec![],
+                to_update: HashSet::new(),
             })
         }
     }
@@ -231,7 +232,12 @@ impl World {
         Ok(players_loading)
     }
 
-    pub fn set_block(&mut self, pos_x: u32, pos_y: u32, block: Block) -> Result<(), WorldError> {
+    pub fn raw_set_block(
+        &mut self,
+        pos_x: u32,
+        pos_y: u32,
+        block: Block,
+    ) -> Result<(), WorldError> {
         self.check_out_of_bounds_block(pos_x, pos_y)?;
 
         let (chunk_x, chunk_y) = self.get_chunk_block_is_in(pos_x, pos_y)?;
@@ -241,6 +247,26 @@ impl World {
         let chunk = self.get_chunk_mut(chunk_x, chunk_y)?;
         debug!("Found chunk at {}, {}", chunk_x, chunk_y);
         chunk.set_block(pos_inside_chunk_x, pos_inside_chunk_y, block);
+        Ok(())
+    }
+
+    fn get_water_neighbours(x: u32, y: u32) -> [(u32, u32); 3] {
+        [(x, y.wrapping_sub(1)), (x.wrapping_sub(1), y), (x + 1, y)]
+    }
+
+    pub fn set_block(&mut self, pos_x: u32, pos_y: u32, block: Block) -> Result<(), WorldError> {
+        self.raw_set_block(pos_x, pos_y, block)?;
+        // update block
+        if block == Block::Water {
+            let neighbours = World::get_water_neighbours(pos_x, pos_y);
+            for (x, y) in neighbours {
+                if let Ok(bl) = self.get_block(x, y) {
+                    if !is_solid(bl) && bl != Block::Water {
+                        self.to_update.insert((x, y, Block::Water));
+                    }
+                }
+            }
+        }
         Ok(())
     }
 
@@ -418,35 +444,25 @@ impl World {
     }
 
     async fn tick_water(&mut self, socket: &UdpSocket) -> Result<(), WorldError> {
-        let mut to_update: Vec<(u32, u32)> = vec![];
-        // OPTIMIZE: very naive impl
-        self.water_map.iter().for_each(|(bl_x, bl_y)| {
-            let pos_to_check = ((*bl_x, *bl_y - 1), (*bl_x - 1, *bl_y), (*bl_x + 1, *bl_y));
-            // todo: this *will* panic, fix later
-            let to_check = [
-                (
-                    self.get_block(pos_to_check.0 .0, pos_to_check.0 .1),
-                    pos_to_check.0,
-                ),
-                (
-                    self.get_block(pos_to_check.1 .0, pos_to_check.1 .1),
-                    pos_to_check.1,
-                ),
-                (
-                    self.get_block(pos_to_check.2 .0, pos_to_check.2 .1),
-                    pos_to_check.2,
-                ),
-            ];
-            to_check.iter().for_each(|(res, pos)| {
-                if let Ok(bl) = res {
-                    if !is_solid(*bl) && *bl != Block::Water {
-                        to_update.push(*pos);
+        let water_to_update: HashSet<&(u32, u32, Block)> = self
+            .to_update
+            .iter()
+            .filter(|pos| pos.2 == Block::Water)
+            .collect();
+        let mut to_update: HashSet<(u32, u32)> = HashSet::new();
+        for (x, y, _) in water_to_update.iter() {
+            let neighbours = World::get_water_neighbours(*x, *y);
+            for (bl_pos_x, bl_pos_y) in neighbours {
+                if let Ok(bl) = self.get_block(bl_pos_x, bl_pos_y) {
+                    if !is_solid(bl) && bl != Block::Water {
+                        to_update.insert((bl_pos_x, bl_pos_y));
                     }
                 }
-            });
-        });
-        for pos in to_update {
-            self.set_block_and_notify(socket, pos.0, pos.1, Block::Water)
+            }
+        }
+        self.to_update.retain(|pos| pos.2 != Block::Water);
+        for (x, y) in to_update {
+            self.set_block_and_notify(socket, x, y, Block::Water)
                 .await?;
         }
         Ok(())
@@ -454,7 +470,6 @@ impl World {
 
     pub async fn tick(&mut self, socket: &UdpSocket) -> io::Result<()> {
         let now = Instant::now();
-        self.water_map = self.get_all_blockpos_of_type(Block::Water);
 
         match self.tick_water(socket).await {
             Ok(_) => (),
@@ -462,6 +477,7 @@ impl World {
                 error!("Error occurred while ticking water: {e}")
             }
         };
+
         debug!("tick took {:?}.", now.elapsed());
         Ok(())
     }
