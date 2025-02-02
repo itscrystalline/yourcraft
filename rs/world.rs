@@ -1,5 +1,6 @@
 use crate::network::{ClientConnection, PacketTypes, ServerKick, ServerUpdateBlock};
 use crate::network::{Packet, ServerPlayerLeave, ServerPlayerLeaveLoaded};
+use crate::player::Player;
 use get_size::GetSize;
 use log::{debug, error, info};
 use rayon::prelude::*;
@@ -70,7 +71,7 @@ macro_rules! define_blocks {
         }
 
 
-        fn is_solid(block: Block) -> bool {
+        pub fn is_solid(block: Block) -> bool {
             match block {
                 $(Block::$name => $solid),*
             }
@@ -469,6 +470,37 @@ impl World {
         Ok(())
     }
 
+    fn get_neighbours_of_player(&mut self, player: Player) -> [(u32, u32, Block); 6] {
+        macro_rules! get_or_air {
+            ($world: expr, $x: expr, $y: expr) => {
+                match $world.get_block($x, $y) {
+                    Ok(bl) => bl,
+                    Err(_) => Block::Air,
+                }
+            };
+        }
+        let (grid_x, grid_y) = (player.x.round() as u32, player.y.round() as u32);
+        let (hitbox_width, hitbox_height) = (player.hitbox_width, player.hitbox_height);
+
+        let positions = [
+            (grid_x, grid_y.wrapping_sub(1)),
+            (grid_x, grid_y + 1),
+            (grid_x.wrapping_sub(1), grid_y + (hitbox_height / 2)),
+            (grid_x.wrapping_sub(1), grid_y),
+            (grid_x + hitbox_width, grid_y + (hitbox_height / 2)),
+            (grid_x + hitbox_width, grid_y),
+        ];
+
+        let block_pos_vec: Vec<(u32, u32, Block)> = positions
+            .iter()
+            .map(|&(x, y)| {
+                let bl = get_or_air!(self, x, y);
+                (x, y, bl)
+            })
+            .collect();
+        block_pos_vec.try_into().unwrap()
+    }
+
     pub async fn tick(&mut self, socket: &UdpSocket) -> io::Result<()> {
         let now = Instant::now();
 
@@ -478,6 +510,11 @@ impl World {
                 error!("Error occurred while ticking water: {e}")
             }
         };
+
+        for conn in self.players.iter_mut() {
+            let neighbours = self.get_neighbours_of_player(conn.server_player.clone());
+            conn.server_player.do_collision(neighbours);
+        }
 
         debug!("tick took {:?}.", now.elapsed());
         Ok(())

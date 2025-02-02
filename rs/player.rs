@@ -1,11 +1,11 @@
-use crate::world::{World, WorldError};
+use crate::world::{is_solid, Block, World, WorldError};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Player {
     pub x: f32,
     pub y: f32,
-    pub hitbox_width: f32,
-    pub hitbox_height: f32,
+    pub hitbox_width: u32,
+    pub hitbox_height: u32,
 }
 
 impl Player {
@@ -13,8 +13,8 @@ impl Player {
         Player {
             x: 0.0,
             y: 0.0,
-            hitbox_width: 1.0,
-            hitbox_height: 2.0,
+            hitbox_width: 1,
+            hitbox_height: 2,
         }
     }
 
@@ -23,8 +23,19 @@ impl Player {
         Ok(Player {
             x: highest.0 as f32,
             y: highest.1 as f32,
-            hitbox_width: 1.0,
-            hitbox_height: 2.0,
+            hitbox_width: 1,
+            hitbox_height: 2,
         })
+    }
+
+    pub fn do_collision(&mut self, surrounding: [(u32, u32, Block); 6]) {
+        // bottom corner
+        let (snap_x, snap_y) = (self.x.round() as u32, self.y.round() as u32);
+
+        let [bottom, top, left_up, left_down, right_up, right_down] = surrounding;
+
+        if is_solid(bottom.2) || is_solid(top.2) {
+            self.x = snap_x as f32;
+        }
     }
 }
