@@ -1,5 +1,6 @@
 use crate::network::{ClientConnection, PacketTypes, ServerKick, ServerUpdateBlock};
 use crate::network::{Packet, ServerPlayerLeave, ServerPlayerLeaveLoaded};
+use get_size::GetSize;
 use log::{debug, error, info};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -40,7 +41,7 @@ pub struct World {
     to_update: HashSet<(u32, u32, Block)>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct Chunk {
     pub size: u32,
     pub chunk_x: u32,

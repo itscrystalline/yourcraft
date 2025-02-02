@@ -1,5 +1,6 @@
 use crate::player::Player;
 use crate::world::{Chunk, World, WorldError};
+use get_size::GetSize;
 use log::{debug, error, info, warn};
 use rand::prelude::*;
 use rayon::prelude::*;
@@ -33,6 +34,25 @@ pub struct ClientConnection {
     pub id: u32,
     pub server_player: Player,
     pub connection_alive: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct NetworkChunk {
+    pub size: u32,
+    pub chunk_x: u32,
+    pub chunk_y: u32,
+    pub blocks: Vec<u8>,
+}
+
+impl From<Chunk> for NetworkChunk {
+    fn from(chunk: Chunk) -> Self {
+        Self {
+            size: chunk.size,
+            chunk_x: chunk.chunk_x,
+            chunk_y: chunk.chunk_y,
+            blocks: chunk.blocks.par_iter().map(|&bl| bl.into()).collect(),
+        }
+    }
 }
 
 impl ClientConnection {
@@ -122,7 +142,7 @@ define_packets!(
         chunk_coords_y: u32,
     },
     ServerChunkResponse = 4 => ServerChunkResponse {
-        chunk: Chunk,
+        chunk: NetworkChunk,
     },
     ClientUnloadChunk = 5 => ClientUnloadChunk {
         chunk_coords_x: u32,
@@ -191,6 +211,7 @@ macro_rules! unwrap_packet_or_ignore {
 macro_rules! encode_and_send {
     ($packet_type: expr, $packet: expr, $socket: expr, $addr: expr) => {
         let encoded = Packet::encode($packet_type, $packet).unwrap();
+        debug!("packet heap size: {}", encoded.get_heap_size());
         $socket.send_to(&encoded, $addr).await?;
     };
 }
@@ -414,13 +435,17 @@ async fn process_client_packet(
                 ) {
                     Ok(chunk) => {
                         let response = ServerChunkResponse {
-                            chunk: chunk.clone(),
+                            chunk: chunk.clone().into(),
                         };
                         encode_and_send!(PacketTypes::ServerChunkResponse, response, socket, addr);
                     }
-                    Err(err) => {
-                        error!("error marking chunk as loaded! {:?}", err);
-                    }
+                    Err(err) => match err {
+                        WorldError::ChunkAlreadyLoaded => warn!(
+                            "player requested already loaded chunk ({}, {})!",
+                            request_packet.chunk_coords_x, request_packet.chunk_coords_y
+                        ),
+                        _ => warn!("error marking chunk as loaded! {:?}", err),
+                    },
                 };
             })
         }
