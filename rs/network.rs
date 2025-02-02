@@ -84,7 +84,6 @@ impl ClientConnection {
     }
 }
 
-// https://chatgpt.com/share/67910f66-8c24-8006-bf28-7bc00ff905ed
 macro_rules! define_packets {
     (
         $(
