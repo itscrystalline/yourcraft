@@ -8,6 +8,7 @@ use tokio::time::{self, Duration};
 
 #[macro_use]
 mod network;
+mod constants;
 mod player;
 mod world;
 
@@ -41,8 +42,9 @@ async fn main() -> io::Result<()> {
     let settings = Settings::parse();
     info!("Starting up with {:?}", settings);
 
-    let mut world_tick = time::interval(Duration::from_millis(20));
-    let mut heartbeat_tick = time::interval(Duration::from_secs(10));
+    let mut world_tick = time::interval(Duration::from_millis(1000 / constants::TICKS_PER_SECOND));
+    let mut heartbeat_tick =
+        time::interval(Duration::from_secs(constants::SECONDS_BETWEEN_HEARTBEATS));
 
     let world_res = match settings.world_type {
         WorldType::Empty => World::generate_empty(

@@ -526,7 +526,10 @@ impl World {
             let res: Vec<(ClientConnection, bool)> = player_surrounding
                 .par_iter()
                 .map(|(conn, surr)| {
-                    let (new_player, has_changed) = conn.server_player.clone().do_collision(*surr);
+                    let (mut new_player, mut has_changed_collision, mut has_changed_fall) =
+                        (conn.server_player.clone(), false, false);
+                    (new_player, has_changed_collision) = new_player.do_collision(*surr);
+                    (new_player, has_changed_fall) = new_player.do_fall(*surr);
                     (
                         ClientConnection {
                             id: conn.id,
@@ -535,7 +538,7 @@ impl World {
                             server_player: new_player,
                             connection_alive: conn.connection_alive,
                         },
-                        has_changed,
+                        has_changed_collision | has_changed_fall,
                     )
                 })
                 .collect();
@@ -548,7 +551,16 @@ impl World {
                         pos_x: conn.server_player.x,
                         pos_y: conn.server_player.y,
                     };
-                    for conn in self.players.iter() {
+                    let (chunk_x, chunk_y) = self
+                        .get_chunk_block_is_in(
+                            conn.server_player.x.round() as u32,
+                            conn.server_player.y.round() as u32,
+                        )
+                        .unwrap_or((0, 0));
+                    let players_loading_chunk = self
+                        .get_list_of_players_loading_chunk(chunk_x, chunk_y)
+                        .unwrap_or_default();
+                    for conn in players_loading_chunk {
                         encode_and_send!(
                             PacketTypes::ServerPlayerUpdatePos,
                             packet.clone(),
