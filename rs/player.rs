@@ -55,12 +55,12 @@ impl Player {
             has_changed = true;
         }
 
-        if is_solid(left_up.2 || left_down.2) {
+        if is_solid(left_up.2) || is_solid(left_down.2) {
             self.x = snap_x as f32;
             has_changed = true;
         }
 
-        if is_solid(right_up.2 || right_down.2) {
+        if is_solid(right_up.2) || is_solid(right_down.2) {
             self.x = snap_x as f32;
             has_changed = true;
         }
