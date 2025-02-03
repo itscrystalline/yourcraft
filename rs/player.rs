@@ -29,7 +29,7 @@ impl Player {
         let highest = world.get_highest_block_at(x)?;
         Ok(Player {
             x: highest.0 as f32,
-            y: highest.1 as f32 + 50.0,
+            y: highest.1 as f32,
             hitbox_width: constants::HITBOX_WIDTH,
             hitbox_height: constants::HITBOX_HEIGHT,
             velocity: 0.0,
