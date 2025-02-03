@@ -45,7 +45,22 @@ impl Player {
 
         let mut has_changed = false;
 
-        if is_solid(bottom.2) || is_solid(top.2) {
+        if is_solid(bottom.2) {
+            self.y = snap_y as f32;
+            has_changed = true;
+        }
+
+        if is_solid(top.2) {
+            self.y = snap_y as f32;
+            has_changed = true;
+        }
+
+        if is_solid(left_up.2 || left_down.2) {
+            self.x = snap_x as f32;
+            has_changed = true;
+        }
+
+        if is_solid(right_up.2 || right_down.2) {
             self.x = snap_x as f32;
             has_changed = true;
         }
