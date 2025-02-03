@@ -528,8 +528,8 @@ impl World {
                 .map(|(conn, surr)| {
                     let (mut new_player, mut has_changed_collision, mut has_changed_fall) =
                         (conn.server_player.clone(), false, false);
-                    (new_player, has_changed_collision) = new_player.do_collision(*surr);
                     (new_player, has_changed_fall) = new_player.do_fall(*surr);
+                    (new_player, has_changed_collision) = new_player.do_collision(*surr);
                     (
                         ClientConnection {
                             id: conn.id,
