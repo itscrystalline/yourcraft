@@ -1,5 +1,3 @@
-use std::cmp::min;
-
 use crate::{
     constants,
     world::{is_solid, BlockPos, World, WorldError},
