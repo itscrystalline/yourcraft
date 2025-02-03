@@ -29,7 +29,7 @@ impl Player {
         let highest = world.get_highest_block_at(x)?;
         Ok(Player {
             x: highest.0 as f32,
-            y: highest.1 as f32,
+            y: highest.1 as f32 + 50.0,
             hitbox_width: constants::HITBOX_WIDTH,
             hitbox_height: constants::HITBOX_HEIGHT,
             velocity: 0.0,
@@ -39,29 +39,29 @@ impl Player {
 
     pub fn do_collision(mut self, surrounding: [BlockPos; 6]) -> (Self, bool) {
         // bottom corner
-        let (snap_x, snap_y) = (self.x.round() as u32, self.y.round() as u32);
+        let (snap_x, snap_y) = (self.x.round(), self.y.round());
 
         let [bottom, top, left_up, left_down, right_up, right_down] = surrounding;
 
         let mut has_changed = false;
 
-        if is_solid(bottom.2) {
-            self.y = snap_y as f32;
+        if is_solid(bottom.2) && self.y != snap_y {
+            self.y = snap_y;
             has_changed = true;
         }
 
-        if is_solid(top.2) {
-            self.y = snap_y as f32;
+        if is_solid(top.2) && self.y != snap_y {
+            self.y = snap_y;
             has_changed = true;
         }
 
-        if is_solid(left_up.2) || is_solid(left_down.2) {
-            self.x = snap_x as f32;
+        if (is_solid(left_up.2) || is_solid(left_down.2)) && self.x != snap_x {
+            self.x = snap_x;
             has_changed = true;
         }
 
-        if is_solid(right_up.2) || is_solid(right_down.2) {
-            self.x = snap_x as f32;
+        if (is_solid(right_up.2) || is_solid(right_down.2)) && self.x != snap_x {
+            self.x = snap_x;
             has_changed = true;
         }
 
