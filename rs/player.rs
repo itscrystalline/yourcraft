@@ -1,4 +1,4 @@
-use crate::world::{is_solid, Block, World, WorldError};
+use crate::world::{is_solid, BlockPos, World, WorldError};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Player {
@@ -28,14 +28,17 @@ impl Player {
         })
     }
 
-    pub fn do_collision(&mut self, surrounding: [(u32, u32, Block); 6]) {
+    pub fn do_collision(mut self, surrounding: [BlockPos; 6]) -> (Self, bool) {
         // bottom corner
         let (snap_x, snap_y) = (self.x.round() as u32, self.y.round() as u32);
 
         let [bottom, top, left_up, left_down, right_up, right_down] = surrounding;
 
+        let mut has_changed = false;
         if is_solid(bottom.2) || is_solid(top.2) {
             self.x = snap_x as f32;
+            has_changed = true;
         }
+        (self, has_changed)
     }
 }

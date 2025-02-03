@@ -1,4 +1,6 @@
-use crate::network::{ClientConnection, PacketTypes, ServerKick, ServerUpdateBlock};
+use crate::network::{
+    ClientConnection, PacketTypes, ServerKick, ServerPlayerUpdatePos, ServerUpdateBlock,
+};
 use crate::network::{Packet, ServerPlayerLeave, ServerPlayerLeaveLoaded};
 use crate::player::Player;
 use get_size::GetSize;
@@ -7,6 +9,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::io;
+use std::iter::zip;
 use std::time::Instant;
 use thiserror::Error;
 use tokio::net::UdpSocket;
@@ -49,6 +52,8 @@ pub struct Chunk {
     pub chunk_y: u32,
     pub blocks: Vec<Block>,
 }
+
+pub type BlockPos = (u32, u32, Block);
 
 macro_rules! define_blocks {
     ($($name:ident = ($id:expr, $solid:expr)),* $(,)?) => {
@@ -470,7 +475,7 @@ impl World {
         Ok(())
     }
 
-    fn get_neighbours_of_player(&mut self, player: Player) -> [(u32, u32, Block); 6] {
+    fn get_neighbours_of_player(&self, player: &Player) -> [(u32, u32, Block); 6] {
         macro_rules! get_or_air {
             ($world: expr, $x: expr, $y: expr) => {
                 match $world.get_block($x, $y) {
@@ -504,16 +509,57 @@ impl World {
     pub async fn tick(&mut self, socket: &UdpSocket) -> io::Result<()> {
         let now = Instant::now();
 
-        match self.tick_water(socket).await {
-            Ok(_) => (),
-            Err(e) => {
-                error!("Error occurred while ticking water: {e}")
-            }
+        if let Err(e) = self.tick_water(socket).await {
+            error!("Error occurred while ticking water: {e}")
         };
 
-        for conn in self.players.iter_mut() {
-            let neighbours = self.get_neighbours_of_player(conn.server_player.clone());
-            conn.server_player.do_collision(neighbours);
+        //collision
+        {
+            let surrounding: Vec<[BlockPos; 6]> = self
+                .players
+                .par_iter()
+                .map(|conn| self.get_neighbours_of_player(&conn.server_player))
+                .collect();
+            let player_surrounding: Vec<(&ClientConnection, [BlockPos; 6])> =
+                zip(&self.players, surrounding).collect();
+
+            let res: Vec<(ClientConnection, bool)> = player_surrounding
+                .par_iter()
+                .map(|(conn, surr)| {
+                    let (new_player, has_changed) = conn.server_player.clone().do_collision(*surr);
+                    (
+                        ClientConnection {
+                            id: conn.id,
+                            name: conn.name.clone(),
+                            addr: conn.addr,
+                            server_player: new_player,
+                            connection_alive: conn.connection_alive,
+                        },
+                        has_changed,
+                    )
+                })
+                .collect();
+
+            let mut new_players = vec![];
+            for (conn, update_pos) in res {
+                if update_pos {
+                    let packet = ServerPlayerUpdatePos {
+                        player_id: conn.id,
+                        pos_x: conn.server_player.x,
+                        pos_y: conn.server_player.y,
+                    };
+                    for conn in self.players.iter() {
+                        encode_and_send!(
+                            PacketTypes::ServerPlayerUpdatePos,
+                            packet.clone(),
+                            socket,
+                            conn.addr
+                        );
+                    }
+                }
+                new_players.push(conn);
+            }
+            self.players = new_players;
         }
 
         debug!("tick took {:?}.", now.elapsed());

@@ -55,11 +55,12 @@ class ClientRequestChunk (Packet):
         self.chunk_coords_y = y
 
 if __name__ == "__main__":
-    respond_to_heartbeat = True if input("respond to heartbeat?") == "y" else False
     conn = ServerConnection("127.0.0.1")
 
     conn.send(Hello("test"))
     INIT_DATA = conn.recv()
+
+    conn.send(ClientRequestChunk(0, 0))
 
     while True:
         receiving = conn.recv()
@@ -69,5 +70,4 @@ if __name__ == "__main__":
             exit(0)
         elif receiving['t'] == HEARTBEAT_SERVER:
             print("heartbeat received")
-            conn.send(Heartbeat()) if respond_to_heartbeat else None
-        conn.send(ClientRequestChunk (0, 0))
+            conn.send(Heartbeat())
