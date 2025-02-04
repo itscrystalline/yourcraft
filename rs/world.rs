@@ -525,19 +525,13 @@ impl World {
 
             let res: Vec<(ClientConnection, bool)> = player_surrounding
                 .par_iter()
-                .map(|(conn, surr)| {
+                .map(|&(conn, surr)| {
                     let mut new_player = conn.server_player.clone();
                     let (has_changed_fall, has_changed_collision);
-                    (new_player, has_changed_fall) = new_player.do_fall(*surr);
-                    (new_player, has_changed_collision) = new_player.do_collision(*surr);
+                    (new_player, has_changed_fall) = new_player.do_fall(surr);
+                    (new_player, has_changed_collision) = new_player.do_collision(surr);
                     (
-                        ClientConnection {
-                            id: conn.id,
-                            name: conn.name.clone(),
-                            addr: conn.addr,
-                            server_player: new_player,
-                            connection_alive: conn.connection_alive,
-                        },
+                        ClientConnection::with(conn, new_player),
                         has_changed_collision | has_changed_fall,
                     )
                 })

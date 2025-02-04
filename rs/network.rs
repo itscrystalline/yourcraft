@@ -67,6 +67,16 @@ impl ClientConnection {
         }
     }
 
+    pub fn with(old: &Self, new_player: Player) -> Self {
+        ClientConnection {
+            id: old.id,
+            name: old.name.clone(),
+            addr: old.addr,
+            server_player: new_player,
+            connection_alive: old.connection_alive,
+        }
+    }
+
     pub fn new_at(
         addr: SocketAddr,
         world: &World,
