@@ -475,7 +475,7 @@ impl World {
         Ok(())
     }
 
-    fn get_neighbours_of_player(&self, player: &Player) -> [(u32, u32, Block); 6] {
+    pub fn get_neighbours_of_player(&self, player: &Player) -> [(u32, u32, Block); 6] {
         macro_rules! get_or_air {
             ($world: expr, $x: expr, $y: expr) => {
                 match $world.get_block($x, $y) {

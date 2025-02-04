@@ -68,21 +68,31 @@ impl Player {
         (self, has_changed)
     }
 
-    fn is_grounded(surrounding: &[BlockPos; 6]) -> bool {
-        is_solid(surrounding[0].2)
+    fn is_grounded(y: f32, surrounding: &[BlockPos; 6]) -> bool {
+        is_solid(surrounding[0].2) && y.round() == y
     }
 
     pub fn do_fall(mut self, surrounding: [BlockPos; 6]) -> (Self, bool) {
-        if !Self::is_grounded(&surrounding) {
+        if !Self::is_grounded(self.y, &surrounding) {
             self.velocity = f32::min(
                 self.velocity + self.acceleration,
                 constants::TERMINAL_VELOCITY,
             );
-            self.y -= self.velocity;
-            self.acceleration += constants::G;
+            self.y += self.velocity;
+            self.acceleration -= constants::G;
             (self, true)
         } else {
+            (self.velocity, self.acceleration) = (0.0, 0.0);
             (self, false)
         }
+    }
+
+    pub fn do_jump(mut self, surrounding: [BlockPos; 6]) -> Self {
+        if Self::is_grounded(self.y, &surrounding) {
+            self.acceleration += constants::INITIAL_JUMP_ACCEL;
+            self.velocity += constants::INITIAL_JUMP_SPEED;
+            self.y += self.velocity;
+        }
+        self
     }
 }

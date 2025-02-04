@@ -429,10 +429,76 @@ async fn process_client_packet(
             })
         }
         PacketTypes::ClientPlayerJump => {
-            todo!()
+            let mut new_player: Player = Player::spawn_at_origin(); // dummy value
+            assert_player_exists!(world, addr, par_iter, player_conn, {
+                let surrounding = world.get_neighbours_of_player(&player_conn.server_player);
+                new_player = player_conn.server_player.clone().do_jump(surrounding);
+            });
+            // we are sure the player exists now
+            let idx = world
+                .players
+                .par_iter()
+                .position_any(|conn| conn.addr == addr)
+                .unwrap();
+            let new_conn = ClientConnection::with(&world.players[idx], new_player);
+
+            let packet = ServerPlayerUpdatePos {
+                player_id: new_conn.id,
+                pos_x: new_conn.server_player.x,
+                pos_y: new_conn.server_player.y,
+            };
+            let (chunk_x, chunk_y) = world
+                .get_chunk_block_is_in(
+                    new_conn.server_player.x.round() as u32,
+                    new_conn.server_player.y.round() as u32,
+                )
+                .unwrap_or((0, 0));
+            let players_loading_chunk = world
+                .get_list_of_players_loading_chunk(chunk_x, chunk_y)
+                .unwrap_or_default();
+            for conn in players_loading_chunk {
+                encode_and_send!(
+                    PacketTypes::ServerPlayerUpdatePos,
+                    packet.clone(),
+                    socket,
+                    conn.addr
+                );
+            }
+
+            world.players[idx] = new_conn;
         }
         PacketTypes::ClientPlayerMoveX => {
-            todo!()
+            assert_player_exists!(world, addr, par_iter_mut, player_conn, {
+                let move_packet: ClientPlayerMoveX = unwrap_packet_or_ignore!(packet);
+                player_conn.server_player.x = move_packet.pos_x;
+            });
+            let new_player = &world.players[world
+                .players
+                .par_iter()
+                .position_any(|conn| conn.addr == addr)
+                .unwrap()];
+            let packet = ServerPlayerUpdatePos {
+                player_id: new_player.id,
+                pos_x: new_player.server_player.x,
+                pos_y: new_player.server_player.y,
+            };
+            let (chunk_x, chunk_y) = world
+                .get_chunk_block_is_in(
+                    new_player.server_player.x.round() as u32,
+                    new_player.server_player.y.round() as u32,
+                )
+                .unwrap_or((0, 0));
+            let players_loading_chunk = world
+                .get_list_of_players_loading_chunk(chunk_x, chunk_y)
+                .unwrap_or_default();
+            for conn in players_loading_chunk {
+                encode_and_send!(
+                    PacketTypes::ServerPlayerUpdatePos,
+                    packet.clone(),
+                    socket,
+                    conn.addr
+                );
+            }
         }
         PacketTypes::ClientRequestChunk => {
             assert_player_exists!(world, addr, par_iter, player_conn, {
