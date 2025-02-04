@@ -61,6 +61,8 @@ if __name__ == "__main__":
     INIT_DATA = conn.recv()
 
     conn.send(ClientRequestChunk(0, 0))
+    chunk = conn.recv()
+    print(chunk)
 
     while True:
         receiving = conn.recv()
