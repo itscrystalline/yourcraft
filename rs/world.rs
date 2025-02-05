@@ -582,7 +582,7 @@ impl World {
         Ok(())
     }
 
-    pub fn get_neighbours_of_player(&self, player: &Player) -> [(u32, u32, Block); 6] {
+    pub fn get_neighbours_of_player(&self, player: &Player) -> [BlockPos; 6] {
         macro_rules! get_or_air {
             ($world: expr, $x: expr, $y: expr) => {
                 match $world.get_block($x, $y) {
@@ -603,7 +603,7 @@ impl World {
             (grid_x + hitbox_width, grid_y),
         ];
 
-        let block_pos_vec: Vec<(u32, u32, Block)> = positions
+        let block_pos_vec: Vec<BlockPos> = positions
             .iter()
             .map(|&(x, y)| {
                 let bl = get_or_air!(self, x, y);
@@ -686,7 +686,10 @@ impl Chunk {
             size,
             chunk_x,
             chunk_y,
-            blocks: (0..size.pow(2)).map(|_| Block::Air).collect(),
+            blocks: (0..size.pow(2))
+                .into_par_iter()
+                .map(|_| Block::Air)
+                .collect(),
         }
     }
 
