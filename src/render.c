@@ -25,6 +25,12 @@ void doRender(SDL_Renderer *renderer, GameState *mState){
     SDL_RenderFillRect(renderer, &platform_x_rect);
   }
 
+  if(mState->man.attack){
+    SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
+    SDL_Rect attack_rect = { mState->man.att_x, mState->man.y+50, mState->man.att_sx, mState->man.att_sy };
+    SDL_RenderFillRect(renderer, &attack_rect);
+  }
+
   SDL_RenderPresent(renderer);
 }
 

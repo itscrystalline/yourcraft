@@ -44,8 +44,8 @@ int main(int argc, char *argv[]){
 
     done = processInputs(window, &mState);
 
-    events(&mState);
     doRender(renderer, &mState);
+    events(&mState);
 
   }
 

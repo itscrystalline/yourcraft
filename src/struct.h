@@ -9,6 +9,12 @@ typedef struct{
 
   // movement
   float vx, vy;
+
+  // action
+  int attack;
+  float att_sx, att_sy;
+  float att_x, att_y;
+
 } Man;
 
 typedef struct{
