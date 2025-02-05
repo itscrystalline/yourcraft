@@ -26,8 +26,8 @@ pub enum WorldError {
     PlaceOutOfLoadedChunk,
     #[error("chunk is already loaded")]
     ChunkAlreadyLoaded,
-    #[error("chunk is already unloaded")]
-    ChunkAlreadyUnloaded,
+    #[error("terrain too detailed: {0} passes for a world that is only {1} blocks wide")]
+    TerrainTooDetailed(u32, u32),
     #[error("error propagating changes to clients: {0}")]
     NetworkError(#[from] io::Error),
 }
@@ -149,6 +149,19 @@ impl World {
             start.elapsed()
         );
         Ok(empty_world)
+    }
+
+    pub fn generate_terrain(
+        width: u32,
+        height: u32,
+        chunk_size: u32,
+        chop_passes: u32,
+    ) -> Result<World, WorldError> {
+        let mut empty_world = World::generate_empty(width, height, chunk_size);
+
+        let start = Instant::now();
+
+        // height map
     }
 
     fn check_out_of_bounds_chunk(&self, chunk_x: u32, chunk_y: u32) -> Result<(), WorldError> {

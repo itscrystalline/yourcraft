@@ -290,17 +290,25 @@ async fn process_client_packet(
             }
         };
     }
+    macro_rules! unwrap_or_return_early {
+        ($to_try: expr, $err_msg: expr) => {
+            match $to_try {
+                Ok(ok) => ok,
+                Err(e) => {
+                    error!($err_msg, e);
+                    return Ok(());
+                }
+            }
+        };
+    }
     match packet.t.into() {
         PacketTypes::ClientHello => {
             let hello_packet: ClientHello = unwrap_packet_or_ignore!(packet);
             info!("{} joined the server!", hello_packet.name);
-            let connection = match ClientConnection::new_at(addr, world, 0, hello_packet.name) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    error!("cannot spawn player: {e}");
-                    return Ok(());
-                }
-            };
+            let connection = unwrap_or_return_early!(
+                ClientConnection::new_at(addr, world, 0, hello_packet.name),
+                "cannot spawn player: {}"
+            );
             let spawn_block_pos = (
                 connection.server_player.x.round() as u32,
                 connection.server_player.y.round() as u32,
@@ -411,6 +419,18 @@ async fn process_client_packet(
         PacketTypes::ClientPlaceBlock => {
             assert_player_exists!(world, addr, par_iter, find_any, _unused, {
                 let place_block_packet: ClientPlaceBlock = unwrap_packet_or_ignore!(packet);
+                let (chunk_x, chunk_y) =
+                    match world.get_chunk_block_is_in(place_block_packet.x, place_block_packet.y) {
+                        Ok(ck) => ck,
+                        Err(e) => {
+                            error!("error while placing block: {e}");
+                            return Ok(());
+                        }
+                    };
+                let players_loading_chunk = world
+                    .get_list_of_players_loading_chunk(chunk_x, chunk_y)
+                    .unwrap_err_unchecked;
+                players_loading_chunk.contains();
                 match world
                     .set_block_and_notify(
                         socket,
