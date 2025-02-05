@@ -38,6 +38,8 @@ enum WorldType {
         #[arg(short, long, default_value = "4")]
         base_height: u32,
         #[arg(short, long, default_value = "128")]
+        upper_height: u32,
+        #[arg(short, long, default_value = "6")]
         passes: u32,
     },
 }
@@ -66,12 +68,14 @@ async fn main() -> io::Result<()> {
         ),
         WorldType::Terrain {
             base_height,
+            upper_height,
             passes,
         } => World::generate_terrain(
             settings.world_width,
             settings.world_height,
             settings.chunk_size,
             base_height,
+            upper_height,
             passes,
         ),
     };

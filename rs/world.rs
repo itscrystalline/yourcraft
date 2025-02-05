@@ -8,7 +8,7 @@ use log::{debug, error, info};
 use noise::{NoiseFn, Perlin};
 use rand::{Rng, RngCore};
 use rayon::prelude::*;
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::io;
@@ -29,8 +29,10 @@ pub enum WorldError {
     OutOfLoadedChunk,
     #[error("chunk is already loaded")]
     ChunkAlreadyLoaded,
-    #[error("terrain too detailed: {0} passes for a world that is only {1} blocks wide")]
+    #[error("terrain too detailed: 2^{0} passes for a world that is only {1} blocks wide")]
     TerrainTooDetailed(u32, u32),
+    #[error("invalid generation heights, requested to generate terrain from y 0 - {0}) but world's size range is 0 - {1}")]
+    InvalidGenerationRange(u32, u32),
     #[error("error propagating changes to clients: {0}")]
     NetworkError(#[from] io::Error),
 }
@@ -159,27 +161,32 @@ impl World {
         height: u32,
         chunk_size: u32,
         base_height: u32,
+        upper_height: u32,
         chop_passes: u32,
     ) -> Result<World, WorldError> {
         let mut world = World::generate_empty(width, height, chunk_size)?;
 
         let start = Instant::now();
 
-        if chop_passes > width {
+        if 2u32.pow(chop_passes) > width {
             return Err(WorldError::TerrainTooDetailed(chop_passes, width));
         }
+        if upper_height > height {
+            return Err(WorldError::InvalidGenerationRange(upper_height, height));
+        }
 
-        let mut height_map: Vec<u32> = vec![base_height; width as usize];
+        let mut height_map: Vec<u32> = vec![0; width as usize];
         Self::midpoint_displacement(
             &mut height_map,
             0,
             (width - 1) as usize,
-            height,
+            base_height,
+            upper_height,
             chop_passes,
         );
+        Self::interpolate(&mut height_map, base_height);
         Self::smooth(&mut height_map, 0.5, 5.0);
 
-        debug!("heightmap: {:?}", height_map);
         for (x, &height) in height_map.iter().enumerate() {
             if height != 0 {
                 for y in 0..height {
@@ -197,21 +204,42 @@ impl World {
         Ok(world)
     }
 
-    fn smooth(heights: &mut [u32], scale: f64, intensity: f64) {
-        let mut rnd = rand::rng();
-        let perlin = Perlin::new(rnd.next_u32());
-
-        for (i, h) in heights.iter_mut().enumerate() {
-            let noise_val = perlin.get([i as f64 * scale]) * intensity; // Generate Perlin noise
-            let noise_int = noise_val.round() as u32; // Convert to integer
-            *h = (*h + noise_int) / 2; // Blend height and noise
+    fn interpolate(heights: &mut [u32], min_height: u32) {
+        if heights[0] == 0 {
+            heights[0] = min_height;
         }
+        if heights[heights.len() - 1] == 0 {
+            heights[heights.len() - 1] = min_height;
+        }
+        let points_of_interest: Vec<(usize, u32)> = heights
+            .par_iter()
+            .enumerate()
+            .filter_map(|(idx, &height)| {
+                if height != 0 {
+                    Some((idx, height))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        points_of_interest.windows(2).for_each(|pair| {
+            let (start_idx, start_height) = pair[0];
+            let (end_idx, end_height) = pair[1];
+            (start_idx + 1..end_idx).for_each(|idx| {
+                let progress: f32 = { (idx - start_idx) as f32 / (end_idx - start_idx) as f32 };
+                let diff: f32 = end_height as f32 - start_height as f32;
+                heights[idx] = (start_height as i32 + (progress * diff).round() as i32) as u32;
+            });
+        });
     }
+
+    fn smooth(heights: &mut [u32], scale: f64, intensity: f64) {}
 
     fn midpoint_displacement(
         heights: &mut Vec<u32>,
         left: usize,
         right: usize,
+        min_height: u32,
         max_height: u32,
         passes_left: u32,
     ) {
@@ -219,19 +247,18 @@ impl World {
             return;
         }
 
-        let mid = (left + right) / 2;
+        let mid = (left + right - 1) / 2;
         let mut rng = rand::rng();
 
-        debug!("height left {}, right {}", heights[left], heights[right]);
         match heights[left].cmp(&heights[right]) {
-            Ordering::Equal => heights[mid] = rng.random_range(heights[left]..max_height),
+            Ordering::Equal => heights[mid] = rng.random_range(min_height..max_height),
             Ordering::Less => heights[mid] = rng.random_range(heights[left]..heights[right]),
             Ordering::Greater => heights[mid] = rng.random_range(heights[right]..heights[left]),
         }
 
         // Recurse for both halves with reduced roughness
-        Self::midpoint_displacement(heights, left, mid, max_height, passes_left - 1);
-        Self::midpoint_displacement(heights, mid, right, max_height, passes_left - 1);
+        Self::midpoint_displacement(heights, left, mid, min_height, max_height, passes_left - 1);
+        Self::midpoint_displacement(heights, mid, right, min_height, max_height, passes_left - 1);
     }
 
     fn check_out_of_bounds_chunk(&self, chunk_x: u32, chunk_y: u32) -> Result<(), WorldError> {
@@ -335,7 +362,7 @@ impl World {
         let pos_inside_chunk_y = pos_y - chunk_y * self.chunk_size;
 
         let chunk = self.get_chunk_mut(chunk_x, chunk_y)?;
-        debug!("Found chunk at {}, {}", chunk_x, chunk_y);
+
         chunk.set_block(pos_inside_chunk_x, pos_inside_chunk_y, block);
         Ok(())
     }
@@ -669,10 +696,10 @@ impl Chunk {
     fn set_block(&mut self, chunk_pos_x: u32, chunk_pos_y: u32, block: Block) -> &mut Self {
         let idx = (chunk_pos_y * self.size + chunk_pos_x) as usize;
         self.blocks[idx] = block;
-        debug!(
-            "[Chunk at ({}, {})] Set block index {} to {:?}",
-            self.chunk_x, self.chunk_y, idx, block
-        );
+        //debug!(
+        //    "[Chunk at ({}, {})] Set block index {} to {:?}",
+        //    self.chunk_x, self.chunk_y, idx, block
+        //);
         self
     }
 
