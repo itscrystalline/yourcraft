@@ -23,7 +23,7 @@ pub enum WorldError {
     #[error("chunk position ({0}, {1}) out of world bounds")]
     OutOfBoundsChunk(u32, u32),
     #[error("player interaction outside loaded chunk")]
-    PlaceOutOfLoadedChunk,
+    OutOfLoadedChunk,
     #[error("chunk is already loaded")]
     ChunkAlreadyLoaded,
     #[error("terrain too detailed: {0} passes for a world that is only {1} blocks wide")]
@@ -160,7 +160,7 @@ impl World {
         let mut empty_world = World::generate_empty(width, height, chunk_size);
 
         let start = Instant::now();
-
+        todo!()
         // height map
     }
 
