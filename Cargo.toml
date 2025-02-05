@@ -20,3 +20,4 @@ rayon = "1.10.0"
 clap = { version = "4.5.27", features = ["derive"] }
 thiserror = "2.0.11"
 get-size = "0.1.4"
+noise = "0.9.0"

@@ -5,8 +5,11 @@ use crate::network::{Packet, ServerPlayerLeave, ServerPlayerLeaveLoaded};
 use crate::player::Player;
 use get_size::GetSize;
 use log::{debug, error, info};
+use noise::{NoiseFn, Perlin};
+use rand::{Rng, RngCore};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::io;
 use std::iter::zip;
@@ -87,7 +90,7 @@ macro_rules! define_blocks {
 
 impl World {
     pub fn generate_empty(width: u32, height: u32, chunk_size: u32) -> Result<World, WorldError> {
-        if width % chunk_size != 0 || height % chunk_size != 0 {
+        if chunk_size == 0 || width % chunk_size != 0 || height % chunk_size != 0 {
             Err(WorldError::MismatchedChunkSize)
         } else {
             let start = Instant::now();
@@ -127,7 +130,7 @@ impl World {
         chunk_size: u32,
         grass_level: u32,
     ) -> Result<World, WorldError> {
-        let mut empty_world = World::generate_empty(width, height, chunk_size)?;
+        let mut world = World::generate_empty(width, height, chunk_size)?;
 
         let start = Instant::now();
 
@@ -135,11 +138,11 @@ impl World {
             for idx in 0..width * grass_level {
                 let x = idx % width;
                 let y = idx / width;
-                empty_world.set_block(x, y, Block::Stone)?
+                world.set_block(x, y, Block::Stone)?
             }
         }
         for x in 0..width {
-            empty_world.set_block(x, grass_level, Block::Grass)?
+            world.set_block(x, grass_level, Block::Grass)?
         }
 
         info!(
@@ -148,20 +151,87 @@ impl World {
             grass_level,
             start.elapsed()
         );
-        Ok(empty_world)
+        Ok(world)
     }
 
     pub fn generate_terrain(
         width: u32,
         height: u32,
         chunk_size: u32,
+        base_height: u32,
         chop_passes: u32,
     ) -> Result<World, WorldError> {
-        let mut empty_world = World::generate_empty(width, height, chunk_size);
+        let mut world = World::generate_empty(width, height, chunk_size)?;
 
         let start = Instant::now();
-        todo!()
-        // height map
+
+        if chop_passes > width {
+            return Err(WorldError::TerrainTooDetailed(chop_passes, width));
+        }
+
+        let mut height_map: Vec<u32> = vec![base_height; width as usize];
+        Self::midpoint_displacement(
+            &mut height_map,
+            0,
+            (width - 1) as usize,
+            height,
+            chop_passes,
+        );
+        Self::smooth(&mut height_map, 0.5, 5.0);
+
+        debug!("heightmap: {:?}", height_map);
+        for (x, &height) in height_map.iter().enumerate() {
+            if height != 0 {
+                for y in 0..height {
+                    world.set_block(x as u32, y, Block::Stone)?;
+                }
+            }
+            world.set_block(x as u32, height, Block::Grass)?;
+        }
+
+        debug!(
+            "generation of terrain with {} passes took {:?}.",
+            chop_passes,
+            start.elapsed()
+        );
+        Ok(world)
+    }
+
+    fn smooth(heights: &mut [u32], scale: f64, intensity: f64) {
+        let mut rnd = rand::rng();
+        let perlin = Perlin::new(rnd.next_u32());
+
+        for (i, h) in heights.iter_mut().enumerate() {
+            let noise_val = perlin.get([i as f64 * scale]) * intensity; // Generate Perlin noise
+            let noise_int = noise_val.round() as u32; // Convert to integer
+            *h = (*h + noise_int) / 2; // Blend height and noise
+        }
+    }
+
+    fn midpoint_displacement(
+        heights: &mut Vec<u32>,
+        left: usize,
+        right: usize,
+        max_height: u32,
+        passes_left: u32,
+    ) {
+        if right - left < 2 || passes_left == 0 {
+            return;
+        }
+
+        let mid = (left + right) / 2;
+        let mut rng = rand::rng();
+
+        debug!("height left {}, right {}", heights[left], heights[right]);
+        match heights[left].cmp(&heights[right]) {
+            Ordering::Equal => heights[mid] = rng.random_range(heights[left]..max_height),
+            Ordering::Less => heights[mid] = rng.random_range(heights[left]..heights[right]),
+            Ordering::Greater => heights[mid] = rng.random_range(heights[right]..heights[left]),
+        }
+
+        // Recurse for both halves with reduced roughness
+        Self::midpoint_displacement(heights, left, mid, max_height, passes_left - 1);
+        Self::midpoint_displacement(heights, mid, right, max_height, passes_left - 1);
     }
 
     fn check_out_of_bounds_chunk(&self, chunk_x: u32, chunk_y: u32) -> Result<(), WorldError> {

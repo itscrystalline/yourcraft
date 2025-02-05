@@ -34,6 +34,12 @@ enum WorldType {
         #[arg(short, long, default_value = "4")]
         grass_height: u32,
     },
+    Terrain {
+        #[arg(short, long, default_value = "4")]
+        base_height: u32,
+        #[arg(short, long, default_value = "128")]
+        passes: u32,
+    },
 }
 
 #[tokio::main]
@@ -57,6 +63,16 @@ async fn main() -> io::Result<()> {
             settings.world_height,
             settings.chunk_size,
             grass_height,
+        ),
+        WorldType::Terrain {
+            base_height,
+            passes,
+        } => World::generate_terrain(
+            settings.world_width,
+            settings.world_height,
+            settings.chunk_size,
+            base_height,
+            passes,
         ),
     };
     let mut world = match world_res {
