@@ -5,10 +5,9 @@ use crate::network::{Packet, ServerPlayerLeave, ServerPlayerLeaveLoaded};
 use crate::player::Player;
 use get_size::GetSize;
 use log::{debug, error, info};
-use noise::{NoiseFn, Perlin};
-use rand::{Rng, RngCore};
+use rand::Rng;
 use rayon::prelude::*;
-use serde::{de, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::io;
@@ -25,14 +24,16 @@ pub enum WorldError {
     OutOfBoundsBlock(u32, u32),
     #[error("chunk position ({0}, {1}) out of world bounds")]
     OutOfBoundsChunk(u32, u32),
-    #[error("player interaction outside loaded chunk")]
-    OutOfLoadedChunk,
+    //#[error("player interaction outside loaded chunk")]
+    //OutOfLoadedChunk,
     #[error("chunk is already loaded")]
     ChunkAlreadyLoaded,
     #[error("terrain too detailed: 2^{0} passes for a world that is only {1} blocks wide")]
     TerrainTooDetailed(u32, u32),
-    #[error("invalid generation heights, requested to generate terrain from y 0 - {0}) but world's size range is 0 - {1}")]
+    #[error("invalid generation heights, requested to generate terrain from y 0 - {0} but world's size range is 0 - {1}")]
     InvalidGenerationRange(u32, u32),
+    #[error("upper_height cannot be less than or equal to base_height")]
+    GenerationTooThin,
     #[error("error propagating changes to clients: {0}")]
     NetworkError(#[from] io::Error),
 }
@@ -92,7 +93,7 @@ macro_rules! define_blocks {
 
 impl World {
     pub fn generate_empty(width: u32, height: u32, chunk_size: u32) -> Result<World, WorldError> {
-        if chunk_size == 0 || width % chunk_size != 0 || height % chunk_size != 0 {
+        if width % chunk_size != 0 || height % chunk_size != 0 {
             Err(WorldError::MismatchedChunkSize)
         } else {
             let start = Instant::now();
@@ -108,7 +109,7 @@ impl World {
                 .collect();
 
             info!(
-                "Generated {} chunks in {:?}",
+                "Generated {} empty chunks in {:?}",
                 width_chunks * height_chunks,
                 start.elapsed()
             );
@@ -163,7 +164,6 @@ impl World {
         base_height: u32,
         upper_height: u32,
         chop_passes: u32,
-        interp_factor: f32,
     ) -> Result<World, WorldError> {
         let mut world = World::generate_empty(width, height, chunk_size)?;
 
@@ -174,6 +174,9 @@ impl World {
         }
         if upper_height > height {
             return Err(WorldError::InvalidGenerationRange(upper_height, height));
+        }
+        if base_height >= upper_height {
+            return Err(WorldError::GenerationTooThin);
         }
 
         let mut height_map: Vec<u32> = vec![0; width as usize];
@@ -186,7 +189,7 @@ impl World {
             chop_passes,
         );
         Self::interpolate(&mut height_map, base_height);
-        Self::smooth(&mut height_map, interp_factor);
+        Self::smooth(&mut height_map);
 
         for (x, &height) in height_map.iter().enumerate() {
             if height != 0 {
@@ -234,26 +237,26 @@ impl World {
         });
     }
 
-    fn smooth(heights: &mut [u32], interp_factor: f32) {
+    fn smooth(heights: &mut [u32]) {
         for center in 2..heights.len() - 2 {
             heights[center] = Self::cubic_interpolate(
                 heights[center - 2],
                 heights[center - 1],
+                heights[center],
                 heights[center + 1],
                 heights[center + 2],
-                interp_factor,
             );
         }
     }
 
-    fn cubic_interpolate(p0: u32, p1: u32, p2: u32, p3: u32, t: f32) -> u32 {
-        let (fp0, fp1, fp2, fp3) = (p0 as f32, p1 as f32, p2 as f32, p3 as f32);
-        let a = (-fp0 + 3.0 * fp1 - 3.0 * fp2 + fp3) / 2.0;
-        let b = (2.0 * fp0 - 5.0 * fp1 + 4.0 * fp2 - fp3) / 2.0;
+    fn cubic_interpolate(p0: u32, p1: u32, center: u32, p2: u32, p3: u32) -> u32 {
+        let (fp0, fp1, center, fp2, fp3) =
+            (p0 as f32, p1 as f32, center as f32, p2 as f32, p3 as f32);
+        let a = (-fp0 + 3.0 * fp1 - 3.0 * fp2 + fp3) / 6.0;
+        let b = (fp0 - 2.0 * fp1 + fp2) / 2.0;
         let c = (-fp0 + fp2) / 2.0;
-        let d = fp1;
 
-        (((a * t + b) * t + c) * t + d) as u32
+        (((a + b + c) + center) / 2.0).round() as u32 // Smooth the center height
     }
 
     fn midpoint_displacement(
@@ -271,11 +274,11 @@ impl World {
         let mid = (left + right - 1) / 2;
         let mut rng = rand::rng();
 
-        match heights[left].cmp(&heights[right]) {
-            Ordering::Equal => heights[mid] = rng.random_range(min_height..max_height),
-            Ordering::Less => heights[mid] = rng.random_range(heights[left]..heights[right]),
-            Ordering::Greater => heights[mid] = rng.random_range(heights[right]..heights[left]),
-        }
+        heights[mid] = match heights[left].cmp(&heights[right]) {
+            Ordering::Equal => rng.random_range(min_height..max_height),
+            Ordering::Less => rng.random_range(heights[left]..heights[right]),
+            Ordering::Greater => rng.random_range(heights[right]..heights[left]),
+        };
 
         // Recurse for both halves with reduced roughness
         Self::midpoint_displacement(heights, left, mid, min_height, max_height, passes_left - 1);
@@ -554,33 +557,6 @@ impl World {
         })
     }
 
-    fn get_all_blockpos_of_type(&self, block_type: Block) -> Vec<(u32, u32)> {
-        self.chunks
-            .par_iter()
-            .filter_map(|chunk| {
-                let hits: Vec<(u32, u32)> = chunk
-                    .blocks
-                    .par_iter()
-                    .enumerate()
-                    .filter_map(|(idx, bl)| {
-                        if *bl == block_type {
-                            let (local_x, local_y) = chunk.pos_from_index(idx);
-                            let global_pos = (
-                                chunk.chunk_x * self.chunk_size + local_x,
-                                chunk.chunk_y * self.chunk_size + local_y,
-                            );
-                            Some(global_pos)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                Some(hits)
-            })
-            .flatten()
-            .collect()
-    }
-
     async fn tick_water(&mut self, socket: &UdpSocket) -> Result<(), WorldError> {
         let water_to_update: HashSet<&(u32, u32, Block)> = self
             .to_update
@@ -726,11 +702,6 @@ impl Chunk {
 
     fn get_block(&self, chunk_pos_x: u32, chunk_pos_y: u32) -> Block {
         self.blocks[(chunk_pos_y * self.size + chunk_pos_x) as usize]
-    }
-
-    fn pos_from_index(&self, idx: usize) -> (u32, u32) {
-        let idx_u32 = idx as u32;
-        (idx_u32 % self.size, idx as u32 / self.size)
     }
 }
 

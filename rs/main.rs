@@ -2,6 +2,7 @@ use crate::world::World;
 use clap::{Parser, Subcommand};
 use log::{error, info};
 use std::io;
+use std::num::NonZeroU32;
 use std::process::exit;
 use tokio::net::UdpSocket;
 use tokio::time::{self, Duration};
@@ -18,11 +19,11 @@ struct Settings {
     #[arg(short, long, default_value = "8475")]
     port: u16,
     #[arg(long, default_value = "1024")]
-    world_width: u32,
+    world_width: NonZeroU32,
     #[arg(long, default_value = "256")]
-    world_height: u32,
+    world_height: NonZeroU32,
     #[arg(short, long, default_value = "16")]
-    chunk_size: u32,
+    chunk_size: NonZeroU32,
     #[command(subcommand)]
     world_type: WorldType,
 }
@@ -40,9 +41,7 @@ enum WorldType {
         #[arg(short, long, default_value = "128")]
         upper_height: u32,
         #[arg(short, long, default_value = "6")]
-        passes: u32,
-        #[arg(short, long, default_value = "0.5")]
-        interp_factor: f32,
+        passes: NonZeroU32,
     },
 }
 
@@ -58,29 +57,27 @@ async fn main() -> io::Result<()> {
 
     let world_res = match settings.world_type {
         WorldType::Empty => World::generate_empty(
-            settings.world_width,
-            settings.world_height,
-            settings.chunk_size,
+            settings.world_width.into(),
+            settings.world_height.into(),
+            settings.chunk_size.into(),
         ),
         WorldType::Flat { grass_height } => World::generate_flat(
-            settings.world_width,
-            settings.world_height,
-            settings.chunk_size,
+            settings.world_width.into(),
+            settings.world_height.into(),
+            settings.chunk_size.into(),
             grass_height,
         ),
         WorldType::Terrain {
             base_height,
             upper_height,
             passes,
-            interp_factor,
         } => World::generate_terrain(
-            settings.world_width,
-            settings.world_height,
-            settings.chunk_size,
+            settings.world_width.into(),
+            settings.world_height.into(),
+            settings.chunk_size.into(),
             base_height,
             upper_height,
-            passes,
-            interp_factor,
+            passes.into(),
         ),
     };
     let mut world = match world_res {

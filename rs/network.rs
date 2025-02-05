@@ -56,17 +56,6 @@ impl From<Chunk> for NetworkChunk {
 }
 
 impl ClientConnection {
-    pub fn new(addr: SocketAddr, name: String) -> ClientConnection {
-        let mut rng = rand::rng();
-        ClientConnection {
-            addr,
-            name,
-            server_player: Player::spawn_at_origin(),
-            id: rng.next_u32(),
-            connection_alive: true,
-        }
-    }
-
     pub fn with(old: &Self, new_player: Player) -> Self {
         ClientConnection {
             id: old.id,

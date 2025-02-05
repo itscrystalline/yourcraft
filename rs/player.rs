@@ -14,17 +14,6 @@ pub struct Player {
 }
 
 impl Player {
-    pub fn spawn_at_origin() -> Self {
-        Player {
-            x: 0.0,
-            y: 0.0,
-            hitbox_width: constants::HITBOX_WIDTH,
-            hitbox_height: constants::HITBOX_HEIGHT,
-            velocity: 0.0,
-            acceleration: 0.0,
-        }
-    }
-
     pub fn spawn_at(world: &World, x: u32) -> Result<Self, WorldError> {
         let highest = world.get_highest_block_at(x)?;
         Ok(Player {
