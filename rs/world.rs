@@ -163,6 +163,7 @@ impl World {
         base_height: u32,
         upper_height: u32,
         chop_passes: u32,
+        interp_factor: f32,
     ) -> Result<World, WorldError> {
         let mut world = World::generate_empty(width, height, chunk_size)?;
 
@@ -185,7 +186,7 @@ impl World {
             chop_passes,
         );
         Self::interpolate(&mut height_map, base_height);
-        Self::smooth(&mut height_map, 0.5, 5.0);
+        Self::smooth(&mut height_map, interp_factor);
 
         for (x, &height) in height_map.iter().enumerate() {
             if height != 0 {
@@ -196,8 +197,8 @@ impl World {
             world.set_block(x as u32, height, Block::Grass)?;
         }
 
-        debug!(
-            "generation of terrain with {} passes took {:?}.",
+        info!(
+            "Generation of terrain with {} passes took {:?}.",
             chop_passes,
             start.elapsed()
         );
@@ -233,7 +234,27 @@ impl World {
         });
     }
 
-    fn smooth(heights: &mut [u32], scale: f64, intensity: f64) {}
+    fn smooth(heights: &mut [u32], interp_factor: f32) {
+        for center in 2..heights.len() - 2 {
+            heights[center] = Self::cubic_interpolate(
+                heights[center - 2],
+                heights[center - 1],
+                heights[center + 1],
+                heights[center + 2],
+                interp_factor,
+            );
+        }
+    }
+
+    fn cubic_interpolate(p0: u32, p1: u32, p2: u32, p3: u32, t: f32) -> u32 {
+        let (fp0, fp1, fp2, fp3) = (p0 as f32, p1 as f32, p2 as f32, p3 as f32);
+        let a = (-fp0 + 3.0 * fp1 - 3.0 * fp2 + fp3) / 2.0;
+        let b = (2.0 * fp0 - 5.0 * fp1 + 4.0 * fp2 - fp3) / 2.0;
+        let c = (-fp0 + fp2) / 2.0;
+        let d = fp1;
+
+        (((a * t + b) * t + c) * t + d) as u32
+    }
 
     fn midpoint_displacement(
         heights: &mut Vec<u32>,

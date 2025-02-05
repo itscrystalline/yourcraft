@@ -41,6 +41,8 @@ enum WorldType {
         upper_height: u32,
         #[arg(short, long, default_value = "6")]
         passes: u32,
+        #[arg(short, long, default_value = "0.5")]
+        interp_factor: f32,
     },
 }
 
@@ -70,6 +72,7 @@ async fn main() -> io::Result<()> {
             base_height,
             upper_height,
             passes,
+            interp_factor,
         } => World::generate_terrain(
             settings.world_width,
             settings.world_height,
@@ -77,6 +80,7 @@ async fn main() -> io::Result<()> {
             base_height,
             upper_height,
             passes,
+            interp_factor,
         ),
     };
     let mut world = match world_res {
