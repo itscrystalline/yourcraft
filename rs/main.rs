@@ -24,6 +24,8 @@ struct Settings {
     world_height: NonZeroU32,
     #[arg(short, long, default_value = "16")]
     chunk_size: NonZeroU32,
+    #[arg(short, long, default_value = "false")]
+    no_console: bool,
     #[command(subcommand)]
     world_type: WorldType,
 }
@@ -47,9 +49,9 @@ enum WorldType {
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    let (from_console, to_console) = console::init();
-
     let settings = Settings::parse();
+    let (from_console, to_console) = console::init(!settings.no_console);
+
     c_info!(to_console, "Starting up with {:?}", settings);
 
     let mut world_tick = time::interval(Duration::from_millis(1000 / constants::TICKS_PER_SECOND));

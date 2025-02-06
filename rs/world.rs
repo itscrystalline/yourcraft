@@ -14,6 +14,7 @@ use std::collections::HashSet;
 use std::io;
 use std::iter::zip;
 use std::time::Instant;
+use strum::EnumString;
 use thiserror::Error;
 use tokio::net::UdpSocket;
 
@@ -64,7 +65,7 @@ pub type BlockPos = (u32, u32, Block);
 
 macro_rules! define_blocks {
     ($($name:ident = ($id:expr, $solid:expr)),* $(,)?) => {
-        #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash, EnumString)]
         pub enum Block {
             $($name = $id),*
         }
@@ -77,18 +78,6 @@ macro_rules! define_blocks {
                 }
             }
         }
-
-        impl From<Block> for u8 {
-            fn from(block: Block) -> u8 { block as u8 }
-        }
-
-
-        pub fn is_solid(block: Block) -> bool {
-            match block {
-                $(Block::$name => $solid),*
-            }
-        }
-
     };
 }
 

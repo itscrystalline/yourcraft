@@ -1,6 +1,7 @@
 use std::{collections::HashMap, num::ParseIntError, str::FromStr};
 
 use log::{debug, error, info, warn};
+use strum::ParseError;
 use thiserror::Error;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
@@ -23,12 +24,14 @@ pub enum CommandError {
     InvalidCommand(String),
     #[error("Missing Argument: {0}")]
     MissingArgument(String),
-    #[error("Wrong type for argument {0}: {1:?}")]
-    ArgParseError {
+    #[error("Wrong type for argument {arg}: {err:?}")]
+    ArgParseErrorInt {
         arg: String,
         #[source]
         err: ParseIntError,
     },
+    #[error("Unknown Block Type")]
+    ArgParseErrorBlock(#[from] ParseError),
 }
 
 impl FromStr for Command {
@@ -47,7 +50,7 @@ impl FromStr for Command {
                     .next()
                     .ok_or(CommandError::MissingArgument("x".to_string()))?
                     .parse::<u32>()
-                    .map_err(|err| CommandError::ArgParseError {
+                    .map_err(|err| CommandError::ArgParseErrorInt {
                         arg: "x".to_string(),
                         err,
                     })?;
@@ -55,7 +58,7 @@ impl FromStr for Command {
                     .next()
                     .ok_or(CommandError::MissingArgument("y".to_string()))?
                     .parse::<u32>()
-                    .map_err(|err| CommandError::ArgParseError {
+                    .map_err(|err| CommandError::ArgParseErrorInt {
                         arg: "y".to_string(),
                         err,
                     })?;
@@ -66,7 +69,7 @@ impl FromStr for Command {
                     .next()
                     .ok_or(CommandError::MissingArgument("x".to_string()))?
                     .parse::<u32>()
-                    .map_err(|err| CommandError::ArgParseError {
+                    .map_err(|err| CommandError::ArgParseErrorInt {
                         arg: "x".to_string(),
                         err,
                     })?;
@@ -74,14 +77,17 @@ impl FromStr for Command {
                     .next()
                     .ok_or(CommandError::MissingArgument("x".to_string()))?
                     .parse::<u32>()
-                    .map_err(|err| CommandError::ArgParseError {
+                    .map_err(|err| CommandError::ArgParseErrorInt {
                         arg: "y".to_string(),
                         err,
                     })?;
-                let block = tokens
-                    .next()
-                    .ok_or(CommandError::MissingArgument("block"))?
-                    .parse::<Block>();
+                let block = Block::from_str(
+                    tokens
+                        .next()
+                        .ok_or(CommandError::MissingArgument("block".to_string()))?,
+                )?;
+
+                Ok(Command::SetBlock { pos: (x, y, block) })
             }
             c => return Err(CommandError::InvalidCommand(c.to_string())),
         }
@@ -96,7 +102,7 @@ pub enum LogLevel {
 }
 pub struct Log(pub LogLevel, pub String);
 
-pub fn init() -> (FromConsole, ToConsole) {
+pub fn init(console_enabled: bool) -> (FromConsole, ToConsole) {
     let (to_main, from_console) = mpsc::unbounded_channel::<Command>();
     let (to_console, from_main) = mpsc::unbounded_channel::<Log>();
     tokio::spawn(async move {
