@@ -1,6 +1,5 @@
 use crate::world::World;
 use clap::{Parser, Subcommand};
-use log::{error, info};
 use std::io;
 use std::num::NonZeroU32;
 use std::process::exit;
@@ -88,7 +87,7 @@ async fn main() -> io::Result<()> {
     let mut world = match world_res {
         Ok(w) => w,
         Err(e) => {
-            error!("Error creating world: {e}");
+            c_error!(to_console, "Error creating world: {e}");
             exit(1)
         }
     };
