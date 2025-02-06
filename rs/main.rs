@@ -9,6 +9,7 @@ use tokio::time::{self, Duration};
 
 #[macro_use]
 mod network;
+mod console;
 mod constants;
 mod player;
 mod world;
@@ -47,9 +48,10 @@ enum WorldType {
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    let (from_console, to_console) = console::init();
+
     let settings = Settings::parse();
-    info!("Starting up with {:?}", settings);
+    c_info!(to_console, "Starting up with {:?}", settings);
 
     let mut world_tick = time::interval(Duration::from_millis(1000 / constants::TICKS_PER_SECOND));
     let mut heartbeat_tick =
@@ -57,11 +59,13 @@ async fn main() -> io::Result<()> {
 
     let world_res = match settings.world_type {
         WorldType::Empty => World::generate_empty(
+            to_console.clone(),
             settings.world_width.into(),
             settings.world_height.into(),
             settings.chunk_size.into(),
         ),
         WorldType::Flat { grass_height } => World::generate_flat(
+            to_console.clone(),
             settings.world_width.into(),
             settings.world_height.into(),
             settings.chunk_size.into(),
@@ -72,6 +76,7 @@ async fn main() -> io::Result<()> {
             upper_height,
             passes,
         } => World::generate_terrain(
+            to_console.clone(),
             settings.world_width.into(),
             settings.world_height.into(),
             settings.chunk_size.into(),
@@ -90,22 +95,22 @@ async fn main() -> io::Result<()> {
 
     let socket = UdpSocket::bind(format!("0.0.0.0:{}", settings.port)).await?;
     let mut buf = [0u8; 1024];
-    info!("Listening on {}", socket.local_addr()?);
+    c_info!(to_console, "Listening on {}", socket.local_addr()?);
     loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
-                world.shutdown(&socket).await?;
-                info!("Server shutdown complete.");
+                world.shutdown(to_console.clone(), &socket).await?;
+                c_info!(to_console, "Server shutdown complete.");
                 break;
             }
             packet = socket.recv_from(&mut buf) => {
-                network::incoming_packet_handler(&socket, &mut buf, &mut world, packet?).await?
+                network::incoming_packet_handler(to_console.clone(), &socket, &mut buf, &mut world, packet?).await?
             }
             _ = heartbeat_tick.tick() => {
-                network::heartbeat(&socket, &mut world).await?;
+                network::heartbeat(to_console.clone(), &socket, &mut world).await?;
             }
             _ = world_tick.tick() => {
-                world.tick(&socket).await?;
+                world.tick(to_console.clone(), &socket).await?;
             }
         }
     }

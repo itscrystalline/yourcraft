@@ -1,7 +1,8 @@
+use crate::console::ToConsole;
 use crate::player::Player;
 use crate::world::{Chunk, World, WorldError};
+use crate::{c_debug, c_error, c_info, c_warn};
 use get_size::GetSize;
-use log::{debug, error, info, warn};
 use rand::prelude::*;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -67,6 +68,7 @@ impl ClientConnection {
     }
 
     pub fn new_at(
+        to_console: ToConsole,
         addr: SocketAddr,
         world: &World,
         x: u32,
@@ -76,7 +78,7 @@ impl ClientConnection {
         Ok(ClientConnection {
             addr,
             name,
-            server_player: Player::spawn_at(world, x)?,
+            server_player: Player::spawn_at(to_console, world, x)?,
             id: rng.next_u32(),
             connection_alive: true,
         })
@@ -193,12 +195,12 @@ define_packets!(
 
 /// returns from the function early if packet fails to decode.
 macro_rules! unwrap_packet_or_ignore {
-    ($packet: expr) => {
+    ($to_console: expr, $packet: expr) => {
         match from_slice(&$packet.data, DeOptions::new()) {
             Ok(packet) => packet,
             Err(err) => {
-                error!("Failed to deserialize packet: {}", err);
-                error!("Received differing packet content from what type of packet suggests ({})! ignoring.", $packet.t);
+                c_error!($to_console, "Failed to deserialize packet: {}", err);
+                c_error!($to_console, "Received differing packet content from what type of packet suggests ({})! ignoring.", $packet.t);
                 return Ok(());
             }
         }
@@ -207,31 +209,39 @@ macro_rules! unwrap_packet_or_ignore {
 
 #[macro_export]
 macro_rules! encode_and_send {
-    ($packet_type: expr, $packet: expr, $socket: expr, $addr: expr) => {
+    ($to_console: expr, $packet_type: expr, $packet: expr, $socket: expr, $addr: expr) => {
         let encoded = Packet::encode($packet_type, $packet).unwrap();
-        debug!("packet heap size: {}", encoded.get_heap_size());
+        c_debug!($to_console, "packet heap size: {}", encoded.get_heap_size());
         $socket.send_to(&encoded, $addr).await?;
     };
 }
 
 pub async fn incoming_packet_handler(
+    to_console: ToConsole,
     socket: &UdpSocket,
     buf: &mut [u8],
     world: &mut World,
     recv: (usize, SocketAddr),
 ) -> io::Result<()> {
     let (len, client_addr) = recv;
-    debug!("{:?} bytes received from {:?}", len, client_addr);
+    c_debug!(
+        to_console,
+        "{:?} bytes received from {:?}",
+        len,
+        client_addr
+    );
 
     let packet: serde_pickle::Result<Packet> = from_slice(&buf[..len], DeOptions::new());
     match packet {
         Ok(packet) => {
-            process_client_packet(socket, packet, client_addr, world).await?;
+            process_client_packet(to_console, socket, packet, client_addr, world).await?;
         }
         Err(e) => {
-            warn!(
+            c_warn!(
+                to_console,
                 "Recieved unknown packet from {}, ignoring! (Err: {:?})",
-                client_addr, e
+                client_addr,
+                e
             );
         }
     }
@@ -239,12 +249,17 @@ pub async fn incoming_packet_handler(
     Ok(())
 }
 
-pub async fn heartbeat(socket: &UdpSocket, world: &mut World) -> io::Result<()> {
+pub async fn heartbeat(
+    to_console: ToConsole,
+    socket: &UdpSocket,
+    world: &mut World,
+) -> io::Result<()> {
     // sends a heartbeat packet to all incoming players.
     let mut inactive: Vec<u32> = vec![];
     for player in world.players.iter_mut() {
         if player.connection_alive {
             encode_and_send!(
+                to_console,
                 PacketTypes::ServerHeartbeat,
                 ServerHeartbeat {},
                 socket,
@@ -256,35 +271,45 @@ pub async fn heartbeat(socket: &UdpSocket, world: &mut World) -> io::Result<()> 
         }
     }
     if !inactive.is_empty() {
-        info!("Kicking {} players due to inactivity.", inactive.len());
+        c_info!(
+            to_console,
+            "Kicking {} players due to inactivity.",
+            inactive.len()
+        );
         for id in inactive {
             world
-                .kick(socket, id, Some("Kicked due to inactivity."))
+                .kick(
+                    to_console.clone(),
+                    socket,
+                    id,
+                    Some("Kicked due to inactivity."),
+                )
                 .await?;
         }
     }
     Ok(())
 }
 async fn process_client_packet(
+    to_console: ToConsole,
     socket: &UdpSocket,
     packet: Packet,
     addr: SocketAddr,
     world: &mut World,
 ) -> io::Result<()> {
     macro_rules! assert_player_exists {
-        ($world:expr, $addr:expr, $iter:ident, $fn:ident, $player_var:ident, $block:block) => {
+        ($to_console: expr, $world:expr, $addr:expr, $iter:ident, $fn:ident, $player_var:ident, $block:block) => {
             match $world.players.$iter().$fn(|x| x.addr == $addr) {
-                None => error!("addr hasn't joined! ({})", $addr),
+                None => c_error!($to_console, "addr hasn't joined! ({})", $addr),
                 Some($player_var) => $block,
             }
         };
     }
     macro_rules! unwrap_or_return_early {
-        ($to_try: expr, $err_msg: expr) => {
+        ($to_console: expr, $to_try: expr, $err_msg: expr) => {
             match $to_try {
                 Ok(ok) => ok,
                 Err(e) => {
-                    error!($err_msg, e);
+                    c_error!($to_console, $err_msg, e);
                     return Ok(());
                 }
             }
@@ -292,10 +317,11 @@ async fn process_client_packet(
     }
     match packet.t.into() {
         PacketTypes::ClientHello => {
-            let hello_packet: ClientHello = unwrap_packet_or_ignore!(packet);
-            info!("{} joined the server!", hello_packet.name);
+            let hello_packet: ClientHello = unwrap_packet_or_ignore!(to_console, packet);
+            c_info!(to_console, "{} joined the server!", hello_packet.name);
             let connection = unwrap_or_return_early!(
-                ClientConnection::new_at(addr, world, 0, hello_packet.name),
+                to_console,
+                ClientConnection::new_at(to_console.clone(), addr, world, 0, hello_packet.name),
                 "cannot spawn player: {}"
             );
             let spawn_block_pos = (
@@ -312,7 +338,7 @@ async fn process_client_packet(
                 spawn_y: connection.server_player.y,
             };
 
-            encode_and_send!(PacketTypes::ServerSync, response, socket, addr);
+            encode_and_send!(to_console, PacketTypes::ServerSync, response, socket, addr);
 
             // notify other players and the ones loading the chunk
             let spawn_chunk_pos = world
@@ -335,6 +361,7 @@ async fn process_client_packet(
 
             for player in world.players.iter() {
                 encode_and_send!(
+                    to_console,
                     PacketTypes::ServerPlayerJoin,
                     to_broadcast.clone(),
                     socket,
@@ -342,6 +369,7 @@ async fn process_client_packet(
                 );
                 if players_loading_chunk.contains(&player) {
                     encode_and_send!(
+                        to_console,
                         PacketTypes::ServerPlayerEnterLoaded,
                         to_broadcast_chunk.clone(),
                         socket,
@@ -354,13 +382,19 @@ async fn process_client_packet(
         }
         PacketTypes::ClientGoodbye => {
             match world.players.par_iter().position_any(|x| x.addr == addr) {
-                None => error!("Goodbye packet from address that hasn't joined! ({})", addr),
+                None => c_error!(
+                    to_console,
+                    "Goodbye packet from address that hasn't joined! ({})",
+                    addr
+                ),
                 Some(idx) => {
                     let connection = world.players.swap_remove(idx);
                     world.unload_all_for(connection.id);
-                    info!(
+                    c_info!(
+                        to_console,
                         "{} (addr: {}) left the server!",
-                        connection.name, connection.addr
+                        connection.name,
+                        connection.addr
                     );
 
                     let last_location = (
@@ -388,6 +422,7 @@ async fn process_client_packet(
 
                     for player in world.players.iter() {
                         encode_and_send!(
+                            to_console,
                             PacketTypes::ServerPlayerLeave,
                             to_broadcast.clone(),
                             socket,
@@ -395,6 +430,7 @@ async fn process_client_packet(
                         );
                         if players_loading_chunk.contains(&player) {
                             encode_and_send!(
+                                to_console,
                                 PacketTypes::ServerPlayerLeaveLoaded,
                                 to_broadcast_chunk.clone(),
                                 socket,
@@ -406,22 +442,26 @@ async fn process_client_packet(
             };
         }
         PacketTypes::ClientPlaceBlock => {
-            assert_player_exists!(world, addr, par_iter, find_any, player_conn, {
-                let place_block_packet: ClientPlaceBlock = unwrap_packet_or_ignore!(packet);
+            assert_player_exists!(to_console, world, addr, par_iter, find_any, player_conn, {
+                let place_block_packet: ClientPlaceBlock =
+                    unwrap_packet_or_ignore!(to_console, packet);
                 let (chunk_x, chunk_y) = unwrap_or_return_early!(
+                    to_console,
                     world.get_chunk_block_is_in(place_block_packet.x, place_block_packet.y),
                     "error while placing block: {}"
                 );
                 let players_loading_chunk = unwrap_or_return_early!(
+                    to_console,
                     world.get_list_of_players_loading_chunk(chunk_x, chunk_y),
                     "error while placing block: {}"
                 );
                 if !players_loading_chunk.contains(&player_conn) {
-                    error!("player {} (addr: {}) tried to place a block in a position they themselves have not loaded!", player_conn.name, player_conn.addr);
+                    c_error!(to_console, "player {} (addr: {}) tried to place a block in a position they themselves have not loaded!", player_conn.name, player_conn.addr);
                     return Ok(());
                 }
                 match world
                     .set_block_and_notify(
+                        to_console.clone(),
                         socket,
                         place_block_packet.x,
                         place_block_packet.y,
@@ -431,14 +471,16 @@ async fn process_client_packet(
                 {
                     Ok(_) => (),
                     Err(e) => match e {
-                        WorldError::NetworkError(e) => error!("error while notifying clients: {e}"),
-                        _ => error!("error while placing block: {e}"),
+                        WorldError::NetworkError(e) => {
+                            c_error!(to_console, "error while notifying clients: {e}")
+                        }
+                        _ => c_error!(to_console, "error while placing block: {e}"),
                     },
                 };
             })
         }
         PacketTypes::ClientPlayerJump => {
-            assert_player_exists!(world, addr, par_iter, position_any, idx, {
+            assert_player_exists!(to_console, world, addr, par_iter, position_any, idx, {
                 let surrounding = world.get_neighbours_of_player(&world.players[idx].server_player);
                 world.players[idx].server_player = world.players[idx]
                     .server_player
@@ -461,6 +503,7 @@ async fn process_client_packet(
                     .unwrap_or_default();
                 for conn in players_loading_chunk {
                     encode_and_send!(
+                        to_console,
                         PacketTypes::ServerPlayerUpdatePos,
                         packet.clone(),
                         socket,
@@ -470,8 +513,8 @@ async fn process_client_packet(
             });
         }
         PacketTypes::ClientPlayerMoveX => {
-            assert_player_exists!(world, addr, par_iter_mut, position_any, idx, {
-                let move_packet: ClientPlayerMoveX = unwrap_packet_or_ignore!(packet);
+            assert_player_exists!(to_console, world, addr, par_iter_mut, position_any, idx, {
+                let move_packet: ClientPlayerMoveX = unwrap_packet_or_ignore!(to_console, packet);
 
                 let (old_chunk_x, old_chunk_y) = world
                     .get_chunk_block_is_in(
@@ -513,6 +556,7 @@ async fn process_client_packet(
                         player_name: new_player.name.clone(),
                     };
                     encode_and_send!(
+                        to_console,
                         PacketTypes::ServerPlayerLeaveLoaded,
                         leave_packet,
                         socket,
@@ -528,6 +572,7 @@ async fn process_client_packet(
                             pos_y: new_player.server_player.y,
                         };
                         encode_and_send!(
+                            to_console,
                             PacketTypes::ServerPlayerEnterLoaded,
                             enter_packet,
                             socket,
@@ -540,6 +585,7 @@ async fn process_client_packet(
                         pos_y: new_player.server_player.y,
                     };
                     encode_and_send!(
+                        to_console,
                         PacketTypes::ServerPlayerUpdatePos,
                         move_packet,
                         socket,
@@ -549,8 +595,9 @@ async fn process_client_packet(
             });
         }
         PacketTypes::ClientRequestChunk => {
-            assert_player_exists!(world, addr, par_iter, find_any, player_conn, {
-                let request_packet: ClientRequestChunk = unwrap_packet_or_ignore!(packet);
+            assert_player_exists!(to_console, world, addr, par_iter, find_any, player_conn, {
+                let request_packet: ClientRequestChunk =
+                    unwrap_packet_or_ignore!(to_console, packet);
                 match world.mark_chunk_loaded_by_id(
                     request_packet.chunk_coords_x,
                     request_packet.chunk_coords_y,
@@ -560,21 +607,30 @@ async fn process_client_packet(
                         let response = ServerChunkResponse {
                             chunk: chunk.clone().into(),
                         };
-                        encode_and_send!(PacketTypes::ServerChunkResponse, response, socket, addr);
+                        encode_and_send!(
+                            to_console,
+                            PacketTypes::ServerChunkResponse,
+                            response,
+                            socket,
+                            addr
+                        );
                     }
                     Err(err) => match err {
-                        WorldError::ChunkAlreadyLoaded => warn!(
+                        WorldError::ChunkAlreadyLoaded => c_warn!(
+                            to_console,
                             "player requested already loaded chunk ({}, {})!",
-                            request_packet.chunk_coords_x, request_packet.chunk_coords_y
+                            request_packet.chunk_coords_x,
+                            request_packet.chunk_coords_y
                         ),
-                        _ => warn!("error marking chunk as loaded! {:?}", err),
+                        _ => c_warn!(to_console, "error marking chunk as loaded! {:?}", err),
                     },
                 };
             })
         }
         PacketTypes::ClientUnloadChunk => {
-            assert_player_exists!(world, addr, par_iter, find_any, player_conn, {
-                let request_packet: ClientUnloadChunk = unwrap_packet_or_ignore!(packet);
+            assert_player_exists!(to_console, world, addr, par_iter, find_any, player_conn, {
+                let request_packet: ClientUnloadChunk =
+                    unwrap_packet_or_ignore!(to_console, packet);
                 match world.unmark_loaded_chunk_for(
                     request_packet.chunk_coords_x,
                     request_packet.chunk_coords_y,
@@ -582,19 +638,28 @@ async fn process_client_packet(
                 ) {
                     Ok(_) => (),
                     Err(err) => {
-                        error!("error marking chunk as unloaded! {:?}", err);
+                        c_error!(to_console, "error marking chunk as unloaded! {:?}", err);
                     }
                 };
             })
         }
         PacketTypes::ClientHeartbeat => {
-            assert_player_exists!(world, addr, par_iter_mut, find_any, player_conn, {
-                player_conn.connection_alive = true;
-            })
+            assert_player_exists!(
+                to_console,
+                world,
+                addr,
+                par_iter_mut,
+                find_any,
+                player_conn,
+                {
+                    player_conn.connection_alive = true;
+                }
+            )
         }
 
         _ => {
-            error!(
+            c_error!(
+                to_console,
                 "server received unknown or client bound packet: {:?}",
                 packet
             );

@@ -1,4 +1,5 @@
 use crate::{
+    console::ToConsole,
     constants,
     world::{is_solid, BlockPos, World, WorldError},
 };
@@ -14,8 +15,8 @@ pub struct Player {
 }
 
 impl Player {
-    pub fn spawn_at(world: &World, x: u32) -> Result<Self, WorldError> {
-        let highest = world.get_highest_block_at(x)?;
+    pub fn spawn_at(to_console: ToConsole, world: &World, x: u32) -> Result<Self, WorldError> {
+        let highest = world.get_highest_block_at(to_console, x)?;
         Ok(Player {
             x: highest.0 as f32,
             y: highest.1 as f32,
