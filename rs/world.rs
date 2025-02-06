@@ -13,7 +13,7 @@ use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::io;
 use std::iter::zip;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use strum::EnumString;
 use thiserror::Error;
 use tokio::net::UdpSocket;
@@ -76,6 +76,16 @@ macro_rules! define_blocks {
                     $($id => Block::$name),*,
                     _ => Block::Air,
                 }
+            }
+        }
+
+        impl From<Block> for u8 {
+            fn from(block: Block) -> u8 { block as u8 }
+        }
+
+        pub fn is_solid(block: Block) -> bool {
+            match block {
+                $(Block::$name => $solid),*
             }
         }
     };
@@ -646,7 +656,11 @@ impl World {
         block_pos_vec.try_into().unwrap()
     }
 
-    pub async fn tick(&mut self, to_console: ToConsole, socket: &UdpSocket) -> io::Result<()> {
+    pub async fn tick(
+        &mut self,
+        to_console: ToConsole,
+        socket: &UdpSocket,
+    ) -> io::Result<Duration> {
         let now = Instant::now();
 
         if let Err(e) = self.tick_water(to_console.clone(), socket).await {
@@ -709,8 +723,9 @@ impl World {
             self.players = new_players;
         }
 
-        c_debug!(to_console, "tick took {:?}.", now.elapsed());
-        Ok(())
+        let time = now.elapsed();
+        c_debug!(to_console, "tick took {:?}.", time);
+        Ok(time)
     }
 }
 
