@@ -6,7 +6,7 @@ use futures::{FutureExt, StreamExt};
 use log::{debug, error, info, warn, LevelFilter};
 use ratatui::{
     layout::{Constraint, Layout},
-    style::Stylize,
+    style::{Style, Stylize},
     text::{Line, Text},
     widgets::{self, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
     DefaultTerminal, Frame,
@@ -18,6 +18,7 @@ use tokio::{
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
     time,
 };
+use tui_textarea::{Input, Key, TextArea};
 
 use crate::{
     constants,
@@ -66,7 +67,7 @@ impl FromStr for Command {
             "mspt" => Ok(Command::Mspt),
             "tps" => Ok(Command::Tps),
             "players" => Ok(Command::Players),
-            "block_at" => {
+            "get" | "block_at" => {
                 let x = tokens
                     .next()
                     .ok_or(CommandError::MissingArgument("x".to_string()))?
@@ -224,7 +225,16 @@ struct RatatuiConsole<'a> {
     debug: bool,
     stats: Stats,
     logs: Text<'a>,
-    command_input: String,
+    command_input: TextArea<'a>,
+}
+
+macro_rules! log_console {
+    ($self: expr, $header: expr, $msg: expr) => {
+        $self
+            .logs
+            .lines
+            .push(Line::from(vec![$header.bold(), " ".into(), $msg.into()]))
+    };
 }
 
 impl RatatuiConsole<'_> {
@@ -254,39 +264,17 @@ impl RatatuiConsole<'_> {
         let mut update_tick =
             time::interval(Duration::from_millis(constants::CONSOLE_UPDATE_RATE_MS));
         let mut input_events = EventStream::new();
+
+        self.command_input.set_cursor_line_style(Style::default());
+        self.command_input
+            .set_block(widgets::Block::bordered().gray().title("Input Command"));
+
         loop {
-            let mut event = input_events.next().fuse();
+            let event = input_events.next().fuse();
             tokio::select! {
                 msg = self.from_main.recv() => {
-                    match msg {
-                        Some(ToConsoleType::Log(log)) => match log.0 {
-                            LogLevel::Debug => if self.debug {
-                                self.logs.lines.push(Line::from(vec![
-                                    "DEBUG".blue().bold(),
-                                    " ".into(),
-                                    log.1.into()
-                                ]))
-                            },
-                            LogLevel::Info => self.logs.lines.push(Line::from(vec![
-                                    "INFO".green().bold(),
-                                    " ".into(),
-                                    log.1.into()
-                            ])),
-                            LogLevel::Warn => self.logs.lines.push(Line::from(vec![
-                                    "WARN".yellow().bold(),
-                                    " ".into(),
-                                    log.1.into()
-                            ])),
-                            LogLevel::Error => self.logs.lines.push(Line::from(vec![
-                                    "ERROR".red().bold(),
-                                    " ".into(),
-                                    log.1.into()
-                            ])),
-                        },
-                        Some(ToConsoleType::Stats(stats)) => self.stats = stats,
-                        None => {
-                            break Ok(());
-                        }
+                    if self.process_from_main(msg) {
+                        break Ok(());
                     }
                 }
                 _ = update_tick.tick() => {
@@ -295,38 +283,11 @@ impl RatatuiConsole<'_> {
                 maybe_event = event => {
                     match maybe_event {
                         Some(Ok(event)) => {
-                            if let Event::Key(key) = event {
-                                match key.code {
-                                    KeyCode::Char(c) => self.command_input.push(c),
-                                    KeyCode::Backspace => {self.command_input.pop();},
-                                    KeyCode::Enter => {
-                                        self.logs.lines.push(Line::from(format!("<- {}", self.command_input.clone())));
-                                        let command = match Command::from_str(&self.command_input) {
-                                            Ok(c) => Some(c),
-                                            Err(e) => {
-                                                self.logs.lines.push(Line::from(vec![
-                                                    "ERROR".red().bold(),
-                                                    " ".into(),
-                                                    format!("{e}").into()
-                                                ]));
-                                                None
-                                            }
-                                        };
-                                        self.command_input.clear();
-                                        if let Some(comm) = command {
-                                            let _ = self.to_main.send(comm.clone());
-                                            if comm == Command::Shutdown {
-                                                break Ok(());
-                                            }
-                                        }
-                                    },
-                                    _ => {}
-                                }
+                            if self.process_terminal_events(event.into()) {
+                                break Ok(());
                             }
                         },
-                        Some(Err(e)) => {
-
-                        },
+                        Some(Err(_)) => {/*silently discard*/},
                         None => {
                             break Ok(());
                         }
@@ -336,19 +297,101 @@ impl RatatuiConsole<'_> {
         }
     }
 
+    fn process_from_main(&mut self, msg: Option<ToConsoleType>) -> bool {
+        match msg {
+            Some(ToConsoleType::Log(log)) => match log.0 {
+                LogLevel::Debug => {
+                    if self.debug {
+                        log_console!(self, "DEBUG".blue(), log.1);
+                    }
+                }
+                LogLevel::Info => log_console!(self, "INFO".green(), log.1),
+                LogLevel::Warn => log_console!(self, "WARN".yellow(), log.1),
+                LogLevel::Error => log_console!(self, "ERROR".red(), log.1),
+            },
+            Some(ToConsoleType::Stats(stats)) => self.stats = stats,
+            None => return true,
+        }
+        false
+    }
+
+    fn process_terminal_events(&mut self, input: Input) -> bool {
+        match input {
+            Input {
+                key: Key::Up,
+                shift,
+                ..
+            } => {
+                let scroll_lines = if shift { 10 } else { 1 };
+                self.scroll = self.scroll.saturating_sub(scroll_lines);
+                self.scroll_state = self.scroll_state.position(self.scroll);
+            }
+            Input {
+                key: Key::Down,
+                shift,
+                ..
+            } => {
+                let scroll_lines = if shift { 10 } else { 1 };
+                self.scroll = self.scroll.saturating_add(scroll_lines);
+                self.scroll_state = self.scroll_state.position(self.scroll);
+            }
+            Input {
+                key: Key::Char('c'),
+                ctrl: true,
+                ..
+            } => {
+                let _ = self.to_main.send(Command::Shutdown);
+                return true;
+            }
+            Input {
+                key: Key::Enter, ..
+            } => {
+                if !self.command_input.is_empty() {
+                    let cmd = match Command::from_str(&self.command_input.lines()[0]) {
+                        Ok(c) => Some(c),
+                        Err(e) => {
+                            log_console!(self, "ERROR".red(), format!("{e}"));
+                            None
+                        }
+                    };
+                    self.command_input
+                        .move_cursor(tui_textarea::CursorMove::End);
+                    self.command_input.delete_line_by_head();
+                    self.scroll += 1;
+                    if let Some(command) = cmd {
+                        let exit = command == Command::Shutdown;
+                        let _ = self.to_main.send(command);
+                        return exit;
+                    }
+                }
+            }
+            input => {
+                self.command_input.input(input);
+            }
+        }
+        false
+    }
+
     fn draw(&mut self, frame: &mut Frame) {
         let area = frame.area();
 
         let layout =
             Layout::vertical([Constraint::Percentage(100), Constraint::Min(3)]).split(area);
 
+        // TODO: do scroll properly??????????? idk
         self.scroll_state = self.scroll_state.content_length(self.logs.lines.len());
+        self.scroll_state = self
+            .scroll_state
+            .position(self.scroll.saturating_sub((layout[0].height - 3).into()));
 
         let log_paragraph = Paragraph::new(self.logs.clone())
             .gray()
             .wrap(Wrap { trim: true })
             .block(widgets::Block::bordered().gray().title("Logs"))
-            .scroll((self.scroll as u16, 0));
+            .scroll((
+                self.scroll.saturating_sub((layout[0].height - 3).into()) as u16,
+                0,
+            ));
         frame.render_widget(log_paragraph, layout[0]);
         frame.render_stateful_widget(
             Scrollbar::new(ScrollbarOrientation::VerticalRight),
@@ -356,10 +399,7 @@ impl RatatuiConsole<'_> {
             &mut self.scroll_state,
         );
 
-        let input = Paragraph::new(self.command_input.clone())
-            .gray()
-            .block(widgets::Block::bordered().gray().title("Command Input"));
-        frame.render_widget(input, layout[1]);
+        frame.render_widget(&self.command_input, layout[1]);
     }
 }
 
