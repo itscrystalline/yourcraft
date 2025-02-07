@@ -392,7 +392,11 @@ impl World {
     }
 
     fn get_water_neighbours(x: u32, y: u32) -> [(u32, u32); 3] {
-        [(x, y.wrapping_sub(1)), (x.wrapping_sub(1), y), (x + 1, y)]
+        [
+            (x, y.saturating_sub(1)),
+            (x.saturating_sub(1), y),
+            (x + 1, y),
+        ]
     }
 
     pub fn set_block(&mut self, pos_x: u32, pos_y: u32, block: Block) -> Result<(), WorldError> {
