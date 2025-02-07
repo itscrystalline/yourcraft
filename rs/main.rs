@@ -1,8 +1,7 @@
 use crate::world::World;
 use clap::{Parser, Subcommand};
-use rayon::iter::{
-    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
-};
+use log::info;
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::io;
 use std::num::NonZeroU32;
 use std::process::exit;
@@ -29,6 +28,8 @@ struct Settings {
     chunk_size: NonZeroU32,
     #[arg(short, long, default_value = "false")]
     no_console: bool,
+    #[arg(long, default_value = "false")]
+    debug: bool,
     #[command(subcommand)]
     world_type: WorldType,
 }
@@ -53,7 +54,7 @@ enum WorldType {
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let settings = Settings::parse();
-    let (mut from_console, to_console) = console::init(!settings.no_console);
+    let (mut from_console, to_console) = console::init(!settings.no_console, settings.debug);
 
     c_info!(to_console, "Starting up with {:?}", settings);
 
@@ -113,15 +114,12 @@ async fn main() -> io::Result<()> {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
                 world.shutdown(to_console.clone(), &socket).await?;
-                c_info!(to_console, "Server shutdown complete after being up for {uptime:?}.");
                 break;
             }
             packet = socket.recv_from(&mut buf) => {
                 network::incoming_packet_handler(to_console.clone(), &socket, &mut buf, &mut world, packet?).await?
             }
             _ = heartbeat_tick.tick() => {
-                console::process_command(to_console.clone(), &socket, &mut world, console::Command::Mspt, tick_times_saved, last_tick_time).await?;
-                console::process_command(to_console.clone(), &socket, &mut world, console::Command::Tps, tick_times_saved, last_tick_time).await?;
                 network::heartbeat(to_console.clone(), &socket, &mut world).await?;
             }
             _ = world_tick.tick() => {
@@ -165,11 +163,15 @@ async fn main() -> io::Result<()> {
             }
             command_opt = from_console.recv() => {
                 if let Some(command) = command_opt {
-                    console::process_command(to_console.clone(), &socket, &mut world, command, tick_times_saved, last_tick_time).await?;
+                    if console::process_command(to_console.clone(), &socket, &mut world, command, tick_times_saved, last_tick_time).await? {
+                        ratatui::restore();
+                        break;
+                    }
                 }
             }
         }
     }
 
+    println!("Server shutdown complete after being up for {uptime:?}.");
     Ok(())
 }
