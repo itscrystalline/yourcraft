@@ -6,17 +6,23 @@
   env.LD_LIBRARY_PATH = "${pkgs.libglvnd}/lib";
 
   # https://devenv.sh/packages/
-  packages = [ pkgs.git pkgs.xorg.libX11 pkgs.libz pkgs.SDL2 ] ++ (with pkgs.python312Packages; [
+  packages = [ 
+    pkgs.git 
+    pkgs.xorg.libX11 
+    pkgs.libz 
+    pkgs.SDL2
+  ] ++ (with pkgs.python312Packages; [
     (pygame.overrideAttrs (oldAttrs: newAttrs: {
         env.PYGAME_DETECT_AVX2 = 1;
     }))
-  ]);
+  ]) ++ pkgs.lib.optional (pkgs.system == "x86_64-linux") pkgs.gcc_multi;
 
   # https://devenv.sh/languages/
   languages.rust = {
     enable = true;
     channel = "stable";
     components = [ "rustc" "cargo" "clippy" "rustfmt" "rust-analyzer" "rust-src" ];
+    targets = [ "x86_64-unknown-linux-gnu" "aarch64-unknown-linux-gnu" "i686-unknown-linux-gnu" ];
   };
   languages.python = {
     enable = true;
