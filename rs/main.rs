@@ -162,12 +162,14 @@ async fn main() -> io::Result<()> {
                 if secs % 600 == 0 {
                     save_and_reset!(tick_times_saved, tick_times_current, 7);
                 }
-                let _ = to_console.send(console::ToConsoleType::Stats(Stats {
-                    uptime,
-                    tps: 1000u128 / max(tick_times_saved[0].as_millis(), 1000u128 / constants::TICKS_PER_SECOND as u128),
-                    mspt: tick_times_saved[0],
-                    players: world.players.len()
-                }));
+                if !settings.no_console {
+                    let _ = to_console.send(console::ToConsoleType::Stats(Stats {
+                        uptime,
+                        tps: 1000u128 / max(tick_times_saved[0].as_millis(), 1000u128 / constants::TICKS_PER_SECOND as u128),
+                        mspt: tick_times_saved[0],
+                        players: world.players.len()
+                    }));
+                }
             }
             command_opt = from_console.recv() => {
                 if let Some(command) = command_opt {
