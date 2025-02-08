@@ -1,6 +1,6 @@
-use color_eyre::owo_colors::OwoColorize;
 use crossterm::event::EventStream;
 use futures::{FutureExt, StreamExt};
+use get_size::GetSize;
 use log::{debug, error, info, warn, LevelFilter};
 use ratatui::{
     layout::{Constraint, Layout},
@@ -9,9 +9,13 @@ use ratatui::{
     widgets::{self, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
     DefaultTerminal, Frame,
 };
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use std::{io, num::ParseIntError, str::FromStr};
-use strum::ParseError;
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use rayon::prelude::*;
+use std::{
+    io,
+    num::{ParseFloatError, ParseIntError},
+    str::FromStr,
+};
 use thiserror::Error;
 use tokio::{
     net::UdpSocket,
@@ -22,6 +26,10 @@ use tui_textarea::{Input, Key, TextArea};
 
 use crate::{
     constants,
+    network::{
+        ClientConnection, Packet, PacketTypes, ServerPlayerEnterLoaded, ServerPlayerLeaveLoaded,
+        ServerPlayerUpdatePos,
+    },
     world::{self, BlockPos, World},
 };
 use tokio::time::Duration;
@@ -36,8 +44,12 @@ pub enum Command {
     Mspt,
     Tps,
     Players,
+    Kick(u32, String),
+    Teleport { id: u32, x: f32, y: f32 },
     SetBlock { pos: BlockPos },
     GetBlock { x: u32, y: u32 },
+    SetSpawn(u32),
+    SetSpawnRange(u32),
 }
 
 #[derive(Error, Debug)]
@@ -46,14 +58,41 @@ pub enum CommandError {
     InvalidCommand(String),
     #[error("Missing Argument: {0}")]
     MissingArgument(String),
-    #[error("Wrong type for argument {arg}: {err:?}")]
-    ArgParseErrorInt {
+    #[error("Wrong type for argument {arg} (needed an int): {err:?}")]
+    ArgParseError {
         arg: String,
         #[source]
-        err: ParseIntError,
+        err: ArgParseError,
     },
-    #[error("Unknown Block Type")]
-    ArgParseErrorBlock(#[from] ParseError),
+}
+
+#[derive(Error, Debug)]
+pub enum ArgParseError {
+    #[error("Cannot parse int: `{0}`")]
+    Int(#[from] ParseIntError),
+    #[error("Cannot parse float: `{0}`")]
+    Float(#[from] ParseFloatError),
+    #[error("Cannot parse Block: `{0}`")]
+    Block(#[from] strum::ParseError),
+}
+
+macro_rules! next_type_token_or_err {
+    ($tokens: expr, $property_name: expr, $type: ty) => {
+        next_token!($tokens, $property_name)
+            .parse::<$type>()
+            .map_err(|err| CommandError::ArgParseError {
+                arg: $property_name.to_string(),
+                err: err.into(),
+            })?
+    };
+}
+
+macro_rules! next_token {
+    ($tokens: expr, $property_name: expr) => {
+        $tokens
+            .next()
+            .ok_or(CommandError::MissingArgument($property_name.to_string()))?
+    };
 }
 
 impl FromStr for Command {
@@ -68,50 +107,42 @@ impl FromStr for Command {
             "exit" | "stop" => Ok(Command::Shutdown),
             "mspt" => Ok(Command::Mspt),
             "tps" => Ok(Command::Tps),
-            "players" => Ok(Command::Players),
+            "players" | "p" => Ok(Command::Players),
+            "kick" => {
+                let player_id = next_type_token_or_err!(tokens, "player_id", u32);
+                let reason = next_token!(tokens, "reason");
+                Ok(Command::Kick(player_id, reason.to_string()))
+            }
+            "teleport" | "tp" => {
+                let id = next_type_token_or_err!(tokens, "player_id", u32);
+                let x = next_type_token_or_err!(tokens, "x", f32);
+                let y = next_type_token_or_err!(tokens, "y", f32);
+                Ok(Command::Teleport { id, x, y })
+            }
             "get" | "block_at" => {
-                let x = tokens
-                    .next()
-                    .ok_or(CommandError::MissingArgument("x".to_string()))?
-                    .parse::<u32>()
-                    .map_err(|err| CommandError::ArgParseErrorInt {
-                        arg: "x".to_string(),
-                        err,
-                    })?;
-                let y = tokens
-                    .next()
-                    .ok_or(CommandError::MissingArgument("y".to_string()))?
-                    .parse::<u32>()
-                    .map_err(|err| CommandError::ArgParseErrorInt {
-                        arg: "y".to_string(),
-                        err,
-                    })?;
+                let x = next_type_token_or_err!(tokens, "x", u32);
+                let y = next_type_token_or_err!(tokens, "y", u32);
                 Ok(Command::GetBlock { x, y })
             }
             "set" => {
-                let x = tokens
-                    .next()
-                    .ok_or(CommandError::MissingArgument("x".to_string()))?
-                    .parse::<u32>()
-                    .map_err(|err| CommandError::ArgParseErrorInt {
-                        arg: "x".to_string(),
-                        err,
-                    })?;
-                let y = tokens
-                    .next()
-                    .ok_or(CommandError::MissingArgument("x".to_string()))?
-                    .parse::<u32>()
-                    .map_err(|err| CommandError::ArgParseErrorInt {
-                        arg: "y".to_string(),
-                        err,
-                    })?;
-                let block = world::Block::from_str(
-                    tokens
-                        .next()
-                        .ok_or(CommandError::MissingArgument("block".to_string()))?,
-                )?;
+                let x = next_type_token_or_err!(tokens, "x", u32);
+                let y = next_type_token_or_err!(tokens, "y", u32);
+                let block = world::Block::from_str(next_token!(tokens, "block")).map_err(|e| {
+                    CommandError::ArgParseError {
+                        arg: "block".to_string(),
+                        err: ArgParseError::Block(e),
+                    }
+                })?;
 
                 Ok(Command::SetBlock { pos: (x, y, block) })
+            }
+            "spawn" => {
+                let x = next_type_token_or_err!(tokens, "x", u32);
+                Ok(Command::SetSpawn(x))
+            }
+            "spawn_range" => {
+                let range = next_type_token_or_err!(tokens, "range", u32);
+                Ok(Command::SetSpawnRange(range))
             }
             c => Err(CommandError::InvalidCommand(c.to_string())),
         }
@@ -389,6 +420,8 @@ impl RatatuiConsole<'_> {
                         let _ = self.to_main.send(command);
                         return exit;
                     }
+                } else {
+                    self.scroll = self.calculate_line_heights()
                 }
             }
             input => {
@@ -489,7 +522,7 @@ pub async fn process_command(
 ) -> io::Result<bool> {
     match command {
         Command::Help => {
-            c_info!(to_console, "Commands: help/h/?, exit/stop, tps, mspt, players, block_at/get (x, y), set (x, y, Block)");
+            c_info!(to_console, "Commands: help/h/?, exit/stop, tps, mspt, players/p, kick (player_id), teleport/tp (player_id, x, y) block_at/get (x, y), set (x, y, Block), spawn (x), spawn_range (range)");
         }
         Command::Shutdown => {
             world.shutdown(to_console, socket).await?;
@@ -552,6 +585,101 @@ pub async fn process_command(
                 );
             });
         }
+        Command::Kick(id, msg) => {
+            world.kick(to_console, socket, id, Some(&msg)).await?;
+        }
+        Command::Teleport { id, x, y } => {
+            let idx_maybe = world.players.par_iter().position_any(|conn| conn.id == id);
+            if let Some(idx) = idx_maybe {
+                let (old_chunk_x, old_chunk_y) = world
+                    .get_chunk_block_is_in(
+                        world.players[idx].server_player.x.round() as u32,
+                        world.players[idx].server_player.y.round() as u32,
+                    )
+                    .unwrap_or((0, 0));
+
+                world.players[idx].server_player.x = x;
+                world.players[idx].server_player.y = y;
+                world.players[idx].server_player.velocity = 0.0;
+                world.players[idx].server_player.acceleration = 0.0;
+
+                let new_player = &world.players[idx];
+                let (chunk_x, chunk_y) = world
+                    .get_chunk_block_is_in(
+                        new_player.server_player.x.round() as u32,
+                        new_player.server_player.y.round() as u32,
+                    )
+                    .unwrap_or((0, 0));
+
+                let players_loading_old_chunk = world
+                    .get_list_of_players_loading_chunk(old_chunk_x, old_chunk_y)
+                    .unwrap_or_default();
+                let players_loading_new_chunk = world
+                    .get_list_of_players_loading_chunk(chunk_x, chunk_y)
+                    .unwrap_or_default();
+
+                let old_players: Vec<&ClientConnection> = players_loading_old_chunk
+                    .clone()
+                    .into_par_iter()
+                    .filter(|conn| !players_loading_new_chunk.contains(conn))
+                    .collect();
+                let new_players: Vec<&ClientConnection> = players_loading_new_chunk
+                    .clone()
+                    .into_par_iter()
+                    .filter(|conn| !players_loading_old_chunk.contains(conn))
+                    .collect();
+
+                for conn in old_players {
+                    let leave_packet = ServerPlayerLeaveLoaded {
+                        player_id: new_player.id,
+                        player_name: new_player.name.clone(),
+                    };
+                    encode_and_send!(
+                        to_console,
+                        PacketTypes::ServerPlayerLeaveLoaded,
+                        leave_packet,
+                        socket,
+                        conn.addr
+                    );
+                }
+                for conn in players_loading_new_chunk {
+                    if new_players.contains(&conn) {
+                        let enter_packet = ServerPlayerEnterLoaded {
+                            player_id: new_player.id,
+                            player_name: new_player.name.clone(),
+                            pos_x: new_player.server_player.x,
+                            pos_y: new_player.server_player.y,
+                        };
+                        encode_and_send!(
+                            to_console,
+                            PacketTypes::ServerPlayerEnterLoaded,
+                            enter_packet,
+                            socket,
+                            conn.addr
+                        );
+                    }
+                    let move_packet = ServerPlayerUpdatePos {
+                        player_id: new_player.id,
+                        pos_x: new_player.server_player.x,
+                        pos_y: new_player.server_player.y,
+                    };
+                    encode_and_send!(
+                        to_console,
+                        PacketTypes::ServerPlayerUpdatePos,
+                        move_packet,
+                        socket,
+                        conn.addr
+                    );
+                }
+                c_info!(
+                    to_console,
+                    "Teleported {} (id {id}) to ({x}, {y})",
+                    new_player.name
+                )
+            } else {
+                c_error!(to_console, "Player {id} does not exist!")
+            }
+        }
         Command::SetBlock { pos } => {
             let (x, y, block) = pos;
             match world
@@ -568,6 +696,18 @@ pub async fn process_command(
                 Err(e) => c_error!(to_console, "Cannot get block at ({x}, {y}): {e}"),
             };
         }
+        Command::SetSpawn(x) => match world.set_spawn(x) {
+            Ok(_) => c_info!(to_console, "World spawn set to x: {x}"),
+            Err(e) => c_error!(to_console, "cannot set spawn to x: {x}: {e}"),
+        },
+        Command::SetSpawnRange(range) => match world.set_spawn_range(range) {
+            Ok(_) => c_info!(
+                to_console,
+                "Spawn range set to {range} blocks around x: {}",
+                world.spawn_point
+            ),
+            Err(e) => c_error!(to_console, "cannot set spawn range to {range}: {e}"),
+        },
     }
     Ok(false)
 }

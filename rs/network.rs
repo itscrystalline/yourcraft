@@ -319,9 +319,16 @@ async fn process_client_packet(
         PacketTypes::ClientHello => {
             let hello_packet: ClientHello = unwrap_packet_or_ignore!(to_console, packet);
             c_info!(to_console, "{} joined the server!", hello_packet.name);
+            let spawn_x = world.get_spawn();
             let connection = unwrap_or_return_early!(
                 to_console,
-                ClientConnection::new_at(to_console.clone(), addr, world, 0, hello_packet.name),
+                ClientConnection::new_at(
+                    to_console.clone(),
+                    addr,
+                    world,
+                    spawn_x,
+                    hello_packet.name
+                ),
                 "cannot spawn player: {}"
             );
             let spawn_block_pos = (

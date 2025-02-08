@@ -1,6 +1,7 @@
 use crate::console::ToConsole;
 use crate::network::{
-    ClientConnection, PacketTypes, ServerKick, ServerPlayerUpdatePos, ServerUpdateBlock,
+    ClientConnection, PacketTypes, ServerKick, ServerPlayerEnterLoaded, ServerPlayerUpdatePos,
+    ServerUpdateBlock,
 };
 use crate::network::{Packet, ServerPlayerLeave, ServerPlayerLeaveLoaded};
 use crate::player::Player;
@@ -13,6 +14,7 @@ use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::io;
 use std::iter::zip;
+use std::ops::Range;
 use std::time::{Duration, Instant};
 use strum::EnumString;
 use thiserror::Error;
@@ -36,6 +38,8 @@ pub enum WorldError {
     InvalidGenerationRange(u32, u32),
     #[error("upper_height cannot be less than or equal to base_height")]
     GenerationTooThin,
+    #[error("spawn range too large (bigger than world width / 2)")]
+    SpawnRangeTooLarge,
     #[error("error propagating changes to clients: {0}")]
     NetworkError(#[from] io::Error),
 }
@@ -51,6 +55,8 @@ pub struct World {
     pub players: Vec<ClientConnection>,
     player_loaded: Vec<Vec<u32>>,
     to_update: HashSet<(u32, u32, Block)>,
+    pub spawn_point: u32,
+    pub spawn_range: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -97,6 +103,8 @@ impl World {
         width: u32,
         height: u32,
         chunk_size: u32,
+        spawn_point: u32,
+        spawn_range: u32,
     ) -> Result<World, WorldError> {
         if width % chunk_size != 0 || height % chunk_size != 0 {
             Err(WorldError::MismatchedChunkSize)
@@ -129,6 +137,8 @@ impl World {
                 players: vec![],
                 player_loaded,
                 to_update: HashSet::new(),
+                spawn_point,
+                spawn_range,
             })
         }
     }
@@ -139,8 +149,17 @@ impl World {
         height: u32,
         chunk_size: u32,
         grass_level: u32,
+        spawn_point: u32,
+        spawn_range: u32,
     ) -> Result<World, WorldError> {
-        let mut world = World::generate_empty(to_console.clone(), width, height, chunk_size)?;
+        let mut world = World::generate_empty(
+            to_console.clone(),
+            width,
+            height,
+            chunk_size,
+            spawn_point,
+            spawn_range,
+        )?;
 
         let start = Instant::now();
 
@@ -173,8 +192,17 @@ impl World {
         base_height: u32,
         upper_height: u32,
         chop_passes: u32,
+        spawn_point: u32,
+        spawn_range: u32,
     ) -> Result<World, WorldError> {
-        let mut world = World::generate_empty(to_console.clone(), width, height, chunk_size)?;
+        let mut world = World::generate_empty(
+            to_console.clone(),
+            width,
+            height,
+            chunk_size,
+            spawn_point,
+            spawn_range,
+        )?;
 
         let start = Instant::now();
 
@@ -306,6 +334,32 @@ impl World {
         if x >= self.width || y >= self.height {
             Err(WorldError::OutOfBoundsBlock(x, y))
         } else {
+            Ok(())
+        }
+    }
+
+    pub fn get_spawn(&self) -> u32 {
+        let spawn_range = Range {
+            start: self.spawn_point.saturating_sub(self.spawn_range),
+            end: std::cmp::min(
+                self.spawn_point.saturating_add(self.spawn_range),
+                self.width,
+            ),
+        };
+        rand::rng().random_range(spawn_range)
+    }
+
+    pub fn set_spawn(&mut self, x: u32) -> Result<(), WorldError> {
+        self.check_out_of_bounds_block(x, 0)?;
+        self.spawn_point = x;
+        Ok(())
+    }
+
+    pub fn set_spawn_range(&mut self, range: u32) -> Result<(), WorldError> {
+        if range > (self.width / 2) {
+            Err(WorldError::SpawnRangeTooLarge)
+        } else {
+            self.spawn_range = range;
             Ok(())
         }
     }
@@ -496,7 +550,7 @@ impl World {
         msg: Option<&str>,
     ) -> io::Result<()> {
         match self.players.iter().position(|x| x.id == id) {
-            None => c_error!(to_console, "Kicking player that hasn't joined! ({})", id),
+            None => c_error!(to_console, "Player {} does not exist!", id),
             Some(idx) => {
                 let connection = self.players.swap_remove(idx);
                 let kick_msg = msg.unwrap_or("No kick message provided");
@@ -681,48 +735,96 @@ impl World {
             let player_surrounding: Vec<(&ClientConnection, [BlockPos; 6])> =
                 zip(&self.players, surrounding).collect();
 
-            let res: Vec<(ClientConnection, bool)> = player_surrounding
+            let res: Vec<(ClientConnection, bool, (f32, f32))> = player_surrounding
                 .par_iter()
                 .map(|&(conn, surr)| {
                     let mut new_player = conn.server_player.clone();
+                    let old_pos = (new_player.x, new_player.y);
                     let (has_changed_fall, has_changed_collision);
                     (new_player, has_changed_fall) = new_player.do_fall(surr);
                     (new_player, has_changed_collision) = new_player.do_collision(surr);
                     (
                         ClientConnection::with(conn, new_player),
                         has_changed_collision | has_changed_fall,
+                        old_pos,
                     )
                 })
                 .collect();
 
             let mut new_players = vec![];
-            for (conn, update_pos) in res {
+            for (new_player, update_pos, (old_x, old_y)) in res {
                 if update_pos {
-                    let packet = ServerPlayerUpdatePos {
-                        player_id: conn.id,
-                        pos_x: conn.server_player.x,
-                        pos_y: conn.server_player.y,
-                    };
+                    let (old_chunk_x, old_chunk_y) = self
+                        .get_chunk_block_is_in(old_x.round() as u32, old_y.round() as u32)
+                        .unwrap_or((0, 0));
                     let (chunk_x, chunk_y) = self
                         .get_chunk_block_is_in(
-                            conn.server_player.x.round() as u32,
-                            conn.server_player.y.round() as u32,
+                            new_player.server_player.x.round() as u32,
+                            new_player.server_player.y.round() as u32,
                         )
                         .unwrap_or((0, 0));
+                    let players_loading_old_chunk = self
+                        .get_list_of_players_loading_chunk(old_chunk_x, old_chunk_y)
+                        .unwrap_or_default();
                     let players_loading_chunk = self
                         .get_list_of_players_loading_chunk(chunk_x, chunk_y)
                         .unwrap_or_default();
+
+                    let old_players: Vec<&ClientConnection> = players_loading_old_chunk
+                        .clone()
+                        .into_par_iter()
+                        .filter(|conn| !players_loading_chunk.contains(conn))
+                        .collect();
+                    let new_players: Vec<&ClientConnection> = players_loading_chunk
+                        .clone()
+                        .into_par_iter()
+                        .filter(|conn| !players_loading_old_chunk.contains(conn))
+                        .collect();
+
+                    for conn in old_players {
+                        let leave_packet = ServerPlayerLeaveLoaded {
+                            player_id: new_player.id,
+                            player_name: new_player.name.clone(),
+                        };
+                        encode_and_send!(
+                            to_console,
+                            PacketTypes::ServerPlayerLeaveLoaded,
+                            leave_packet,
+                            socket,
+                            conn.addr
+                        );
+                    }
                     for conn in players_loading_chunk {
+                        if new_players.contains(&conn) {
+                            let enter_packet = ServerPlayerEnterLoaded {
+                                player_id: new_player.id,
+                                player_name: new_player.name.clone(),
+                                pos_x: new_player.server_player.x,
+                                pos_y: new_player.server_player.y,
+                            };
+                            encode_and_send!(
+                                to_console,
+                                PacketTypes::ServerPlayerEnterLoaded,
+                                enter_packet,
+                                socket,
+                                conn.addr
+                            );
+                        }
+                        let move_packet = ServerPlayerUpdatePos {
+                            player_id: new_player.id,
+                            pos_x: new_player.server_player.x,
+                            pos_y: new_player.server_player.y,
+                        };
                         encode_and_send!(
                             to_console,
                             PacketTypes::ServerPlayerUpdatePos,
-                            packet.clone(),
+                            move_packet,
                             socket,
                             conn.addr
                         );
                     }
                 }
-                new_players.push(conn);
+                new_players.push(new_player);
             }
             self.players = new_players;
         }

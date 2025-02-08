@@ -10,8 +10,8 @@ pub struct Player {
     pub y: f32,
     pub hitbox_width: u32,
     pub hitbox_height: u32,
-    velocity: f32,
-    acceleration: f32,
+    pub velocity: f32,
+    pub acceleration: f32,
 }
 
 impl Player {
@@ -64,10 +64,10 @@ impl Player {
 
     pub fn do_fall(mut self, surrounding: [BlockPos; 6]) -> (Self, bool) {
         if !Self::is_grounded(self.y, &surrounding) {
-            self.velocity = f32::min(
-                self.velocity + self.acceleration,
-                constants::TERMINAL_VELOCITY,
-            );
+            self.velocity += self.acceleration;
+            self.velocity = self
+                .velocity
+                .clamp(-constants::TERMINAL_VELOCITY, constants::TERMINAL_VELOCITY);
             self.y += self.velocity;
             self.acceleration -= constants::G;
             (self, true)

@@ -1,7 +1,6 @@
 use crate::world::World;
 use clap::{Parser, Subcommand};
 use console::Stats;
-use log::info;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::cmp::max;
 use std::io;
@@ -28,6 +27,10 @@ struct Settings {
     world_height: NonZeroU32,
     #[arg(short, long, default_value = "16")]
     chunk_size: NonZeroU32,
+    #[arg(long)]
+    spawn_point: Option<u32>,
+    #[arg(long, default_value = "16")]
+    spawn_range: u32,
     #[arg(short, long, default_value = "false")]
     no_console: bool,
     #[arg(long, default_value = "false")]
@@ -65,12 +68,18 @@ async fn main() -> io::Result<()> {
         time::interval(Duration::from_secs(constants::SECONDS_BETWEEN_HEARTBEATS));
     let mut uptime_clock = time::interval(Duration::from_secs(1));
 
+    let spawn_point = settings
+        .spawn_point
+        .unwrap_or(u32::from(settings.world_width) / 2);
+
     let world_res = match settings.world_type {
         WorldType::Empty => World::generate_empty(
             to_console.clone(),
             settings.world_width.into(),
             settings.world_height.into(),
             settings.chunk_size.into(),
+            spawn_point,
+            settings.spawn_range,
         ),
         WorldType::Flat { grass_height } => World::generate_flat(
             to_console.clone(),
@@ -78,6 +87,8 @@ async fn main() -> io::Result<()> {
             settings.world_height.into(),
             settings.chunk_size.into(),
             grass_height,
+            spawn_point,
+            settings.spawn_range,
         ),
         WorldType::Terrain {
             base_height,
@@ -91,6 +102,8 @@ async fn main() -> io::Result<()> {
             base_height,
             upper_height,
             passes.into(),
+            spawn_point,
+            settings.spawn_range,
         ),
     };
     let mut world = match world_res {

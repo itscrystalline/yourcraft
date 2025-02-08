@@ -1,6 +1,8 @@
 { pkgs, lib, config, inputs, ... }:
 
-let cc_aarch64 = pkgs.pkgsCross.aarch64-multiplatform.stdenv.cc; in {
+let 
+  cc_aarch64 = pkgs.pkgsCross.aarch64-multiplatform.stdenv.cc; 
+in {
   cachix.enable = false;
 
   env.LD_LIBRARY_PATH = "${pkgs.libglvnd}/lib";
