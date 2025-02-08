@@ -1,7 +1,5 @@
-use std::{collections::HashMap, fmt::Display, io, num::ParseIntError, str::FromStr};
-
 use color_eyre::owo_colors::OwoColorize;
-use crossterm::event::{Event, EventStream, KeyCode};
+use crossterm::event::EventStream;
 use futures::{FutureExt, StreamExt};
 use log::{debug, error, info, warn, LevelFilter};
 use ratatui::{
@@ -11,6 +9,8 @@ use ratatui::{
     widgets::{self, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
     DefaultTerminal, Frame,
 };
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use std::{io, num::ParseIntError, str::FromStr};
 use strum::ParseError;
 use thiserror::Error;
 use tokio::{
@@ -31,6 +31,7 @@ pub type ToConsole = UnboundedSender<ToConsoleType>;
 
 #[derive(PartialEq, Clone)]
 pub enum Command {
+    Help,
     Shutdown,
     Mspt,
     Tps,
@@ -63,7 +64,8 @@ impl FromStr for Command {
             .next()
             .ok_or(CommandError::InvalidCommand("".to_string()))?
         {
-            "exit" => Ok(Command::Shutdown),
+            "help" | "h" | "?" => Ok(Command::Help),
+            "exit" | "stop" => Ok(Command::Shutdown),
             "mspt" => Ok(Command::Mspt),
             "tps" => Ok(Command::Tps),
             "players" => Ok(Command::Players),
@@ -125,10 +127,10 @@ pub enum LogLevel {
 pub struct Log(pub LogLevel, pub String);
 #[derive(Default)]
 pub struct Stats {
-    uptime: Duration,
-    tps: u32,
-    mspt: Duration,
-    players: u32,
+    pub uptime: Duration,
+    pub tps: u128,
+    pub mspt: Duration,
+    pub players: usize,
 }
 pub enum ToConsoleType {
     Log(Log),
@@ -219,21 +221,29 @@ pub fn init(console_enabled: bool, debug: bool) -> (FromConsole, ToConsole) {
 
 struct RatatuiConsole<'a> {
     scroll_state: ScrollbarState,
-    scroll: usize,
+    scroll: u16,
     to_main: UnboundedSender<Command>,
     from_main: UnboundedReceiver<ToConsoleType>,
     debug: bool,
     stats: Stats,
+    consle_rect: (u16, u16),
     logs: Text<'a>,
     command_input: TextArea<'a>,
 }
 
 macro_rules! log_console {
     ($self: expr, $header: expr, $msg: expr) => {
-        $self
-            .logs
-            .lines
-            .push(Line::from(vec![$header.bold(), " ".into(), $msg.into()]))
+        $self.logs.lines.push(Line::from(vec![
+            format!(
+                "{}",
+                humantime::format_rfc3339_seconds(std::time::SystemTime::now())
+            )
+            .into(),
+            " ".into(),
+            $header.bold(),
+            " ".into(),
+            $msg.into(),
+        ]))
     };
 }
 
@@ -252,6 +262,7 @@ impl RatatuiConsole<'_> {
             from_main,
             debug,
             stats: Default::default(),
+            consle_rect: (0, 0),
             logs: Default::default(),
             command_input: Default::default(),
         };
@@ -266,8 +277,12 @@ impl RatatuiConsole<'_> {
         let mut input_events = EventStream::new();
 
         self.command_input.set_cursor_line_style(Style::default());
-        self.command_input
-            .set_block(widgets::Block::bordered().gray().title("Input Command"));
+        self.command_input.set_block(
+            widgets::Block::bordered()
+                .gray()
+                .title("Input Command (type `?` for commands)")
+                .border_type(widgets::BorderType::Rounded),
+        );
 
         loop {
             let event = input_events.next().fuse();
@@ -315,6 +330,15 @@ impl RatatuiConsole<'_> {
         false
     }
 
+    fn calculate_line_heights(&self) -> u16 {
+        let (width, _) = self.consle_rect;
+        self.logs
+            .lines
+            .par_iter()
+            .map(|l| (l.width() as u16 / (width - 2)) + 1)
+            .sum()
+    }
+
     fn process_terminal_events(&mut self, input: Input) -> bool {
         match input {
             Input {
@@ -324,7 +348,6 @@ impl RatatuiConsole<'_> {
             } => {
                 let scroll_lines = if shift { 10 } else { 1 };
                 self.scroll = self.scroll.saturating_sub(scroll_lines);
-                self.scroll_state = self.scroll_state.position(self.scroll);
             }
             Input {
                 key: Key::Down,
@@ -333,7 +356,6 @@ impl RatatuiConsole<'_> {
             } => {
                 let scroll_lines = if shift { 10 } else { 1 };
                 self.scroll = self.scroll.saturating_add(scroll_lines);
-                self.scroll_state = self.scroll_state.position(self.scroll);
             }
             Input {
                 key: Key::Char('c'),
@@ -347,6 +369,11 @@ impl RatatuiConsole<'_> {
                 key: Key::Enter, ..
             } => {
                 if !self.command_input.is_empty() {
+                    self.logs.lines.push(Line::from(vec![
+                        "<- ".bold(),
+                        self.command_input.lines()[0].clone().bold(),
+                    ]));
+                    self.scroll = self.calculate_line_heights().saturating_add(1);
                     let cmd = match Command::from_str(&self.command_input.lines()[0]) {
                         Ok(c) => Some(c),
                         Err(e) => {
@@ -357,7 +384,6 @@ impl RatatuiConsole<'_> {
                     self.command_input
                         .move_cursor(tui_textarea::CursorMove::End);
                     self.command_input.delete_line_by_head();
-                    self.scroll += 1;
                     if let Some(command) = cmd {
                         let exit = command == Command::Shutdown;
                         let _ = self.to_main.send(command);
@@ -372,26 +398,75 @@ impl RatatuiConsole<'_> {
         false
     }
 
+    fn validate_command(&mut self) {
+        if self.command_input.is_empty() {
+            self.command_input.set_block(
+                widgets::Block::bordered()
+                    .gray()
+                    .title("Input Command (type `?` for commands)")
+                    .border_type(widgets::BorderType::Rounded),
+            );
+        } else {
+            let comm = Command::from_str(&self.command_input.lines()[0]);
+            if let Err(e) = comm {
+                self.command_input.set_block(
+                    widgets::Block::bordered()
+                        .red()
+                        .title(format!("{e} (type `?` for commands)"))
+                        .border_type(widgets::BorderType::Rounded)
+                        .border_style(Style::new().bold()),
+                );
+            } else {
+                self.command_input.set_block(
+                    widgets::Block::bordered()
+                        .green()
+                        .title("Input Command")
+                        .border_type(widgets::BorderType::Rounded)
+                        .border_style(Style::new().bold()),
+                );
+            }
+        }
+    }
+
     fn draw(&mut self, frame: &mut Frame) {
         let area = frame.area();
 
         let layout =
             Layout::vertical([Constraint::Percentage(100), Constraint::Min(3)]).split(area);
 
-        // TODO: do scroll properly??????????? idk
+        self.consle_rect = (layout[0].width, layout[0].height);
+
         self.scroll_state = self.scroll_state.content_length(self.logs.lines.len());
-        self.scroll_state = self
-            .scroll_state
-            .position(self.scroll.saturating_sub((layout[0].height - 3).into()));
+
+        let actual_scroll_position = self.scroll.saturating_sub(self.consle_rect.1 - 2);
+        self.scroll_state = self.scroll_state.position(actual_scroll_position.into());
 
         let log_paragraph = Paragraph::new(self.logs.clone())
             .gray()
             .wrap(Wrap { trim: true })
-            .block(widgets::Block::bordered().gray().title("Logs"))
-            .scroll((
-                self.scroll.saturating_sub((layout[0].height - 3).into()) as u16,
-                0,
-            ));
+            .block(
+                widgets::Block::bordered()
+                    .gray()
+                    .title("Logs".bold().into_left_aligned_line())
+                    .title(
+                        format!("Up for {}", humantime::format_duration(self.stats.uptime))
+                            .bold()
+                            .into_centered_line(),
+                    )
+                    .title(
+                        Line::from(vec![
+                            format!("{} TPS", self.stats.tps).bold(),
+                            " ".into(),
+                            format!("({:?}/t)", self.stats.mspt).into(),
+                            " ".into(),
+                            format!("{} Online", self.stats.players).bold(),
+                            "─".into(),
+                        ])
+                        .right_aligned(),
+                    )
+                    .border_type(widgets::BorderType::Rounded),
+            )
+            .scroll((actual_scroll_position, 0));
         frame.render_widget(log_paragraph, layout[0]);
         frame.render_stateful_widget(
             Scrollbar::new(ScrollbarOrientation::VerticalRight),
@@ -399,6 +474,7 @@ impl RatatuiConsole<'_> {
             &mut self.scroll_state,
         );
 
+        self.validate_command();
         frame.render_widget(&self.command_input, layout[1]);
     }
 }
@@ -412,6 +488,9 @@ pub async fn process_command(
     last_tick_time: Duration,
 ) -> io::Result<bool> {
     match command {
+        Command::Help => {
+            c_info!(to_console, "Commands: help/h/?, exit/stop, tps, mspt, players, block_at/get (x, y), set (x, y, Block)");
+        }
         Command::Shutdown => {
             world.shutdown(to_console, socket).await?;
             return Ok(true);

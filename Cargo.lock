@@ -1399,6 +1399,7 @@ dependencies = [
  "env_logger",
  "futures",
  "get-size",
+ "humantime",
  "log",
  "noise",
  "rand 0.9.0",
