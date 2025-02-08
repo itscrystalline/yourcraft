@@ -1,10 +1,11 @@
+use crate::console::ToConsole;
 use crate::network::{
     ClientConnection, PacketTypes, ServerKick, ServerPlayerUpdatePos, ServerUpdateBlock,
 };
 use crate::network::{Packet, ServerPlayerLeave, ServerPlayerLeaveLoaded};
 use crate::player::Player;
+use crate::{c_debug, c_error, c_info};
 use get_size::GetSize;
-use log::{debug, error, info};
 use rand::Rng;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -12,7 +13,8 @@ use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::io;
 use std::iter::zip;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+use strum::EnumString;
 use thiserror::Error;
 use tokio::net::UdpSocket;
 
@@ -63,7 +65,7 @@ pub type BlockPos = (u32, u32, Block);
 
 macro_rules! define_blocks {
     ($($name:ident = ($id:expr, $solid:expr)),* $(,)?) => {
-        #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash, EnumString)]
         pub enum Block {
             $($name = $id),*
         }
@@ -81,18 +83,21 @@ macro_rules! define_blocks {
             fn from(block: Block) -> u8 { block as u8 }
         }
 
-
         pub fn is_solid(block: Block) -> bool {
             match block {
                 $(Block::$name => $solid),*
             }
         }
-
     };
 }
 
 impl World {
-    pub fn generate_empty(width: u32, height: u32, chunk_size: u32) -> Result<World, WorldError> {
+    pub fn generate_empty(
+        to_console: ToConsole,
+        width: u32,
+        height: u32,
+        chunk_size: u32,
+    ) -> Result<World, WorldError> {
         if width % chunk_size != 0 || height % chunk_size != 0 {
             Err(WorldError::MismatchedChunkSize)
         } else {
@@ -108,7 +113,8 @@ impl World {
                 })
                 .collect();
 
-            info!(
+            c_info!(
+                to_console,
                 "Generated {} empty chunks in {:?}",
                 width_chunks * height_chunks,
                 start.elapsed()
@@ -128,12 +134,13 @@ impl World {
     }
 
     pub fn generate_flat(
+        to_console: ToConsole,
         width: u32,
         height: u32,
         chunk_size: u32,
         grass_level: u32,
     ) -> Result<World, WorldError> {
-        let mut world = World::generate_empty(width, height, chunk_size)?;
+        let mut world = World::generate_empty(to_console.clone(), width, height, chunk_size)?;
 
         let start = Instant::now();
 
@@ -148,7 +155,8 @@ impl World {
             world.set_block(x, grass_level, Block::Grass)?
         }
 
-        info!(
+        c_info!(
+            to_console,
             "filled {} * {} area with grass and stone in {:?}",
             width,
             grass_level,
@@ -158,6 +166,7 @@ impl World {
     }
 
     pub fn generate_terrain(
+        to_console: ToConsole,
         width: u32,
         height: u32,
         chunk_size: u32,
@@ -165,7 +174,7 @@ impl World {
         upper_height: u32,
         chop_passes: u32,
     ) -> Result<World, WorldError> {
-        let mut world = World::generate_empty(width, height, chunk_size)?;
+        let mut world = World::generate_empty(to_console.clone(), width, height, chunk_size)?;
 
         let start = Instant::now();
 
@@ -200,7 +209,8 @@ impl World {
             world.set_block(x as u32, height, Block::Grass)?;
         }
 
-        info!(
+        c_info!(
+            to_console,
             "Generation of terrain with {} passes took {:?}.",
             chop_passes,
             start.elapsed()
@@ -429,6 +439,7 @@ impl World {
 
     pub async fn set_block_and_notify(
         &mut self,
+        to_console: ToConsole,
         socket: &UdpSocket,
         pos_x: u32,
         pos_y: u32,
@@ -445,6 +456,7 @@ impl World {
 
         for player in players_loading {
             encode_and_send!(
+                to_console,
                 PacketTypes::ServerUpdateBlock,
                 response.clone(),
                 socket,
@@ -455,8 +467,8 @@ impl World {
         Ok(())
     }
 
-    pub async fn shutdown(&mut self, socket: &UdpSocket) -> io::Result<()> {
-        info!("Shutting down Server!");
+    pub async fn shutdown(&mut self, to_console: ToConsole, socket: &UdpSocket) -> io::Result<()> {
+        c_info!(to_console, "Shutting down Server!");
         let kick_msg = String::from("Server Shutting Down!");
         self.player_loaded
             .par_iter_mut()
@@ -464,22 +476,37 @@ impl World {
 
         let kick = ServerKick { msg: kick_msg };
         for player in &mut self.players {
-            encode_and_send!(PacketTypes::ServerKick, kick.clone(), socket, player.addr);
+            encode_and_send!(
+                to_console,
+                PacketTypes::ServerKick,
+                kick.clone(),
+                socket,
+                player.addr
+            );
         }
         self.players.clear();
         Ok(())
     }
 
-    pub async fn kick(&mut self, socket: &UdpSocket, id: u32, msg: Option<&str>) -> io::Result<()> {
+    pub async fn kick(
+        &mut self,
+        to_console: ToConsole,
+        socket: &UdpSocket,
+        id: u32,
+        msg: Option<&str>,
+    ) -> io::Result<()> {
         match self.players.iter().position(|x| x.id == id) {
-            None => error!("Kicking player that hasn't joined! ({})", id),
+            None => c_error!(to_console, "Kicking player that hasn't joined! ({})", id),
             Some(idx) => {
                 let connection = self.players.swap_remove(idx);
                 let kick_msg = msg.unwrap_or("No kick message provided");
                 self.unload_all_for(connection.id);
-                info!(
+                c_info!(
+                    to_console,
                     "{} (addr: {}) kicked from sever! ({})",
-                    connection.name, connection.addr, kick_msg
+                    connection.name,
+                    connection.addr,
+                    kick_msg
                 );
 
                 let last_location = (
@@ -508,10 +535,17 @@ impl World {
                 let kick = ServerKick {
                     msg: kick_msg.into(),
                 };
-                encode_and_send!(PacketTypes::ServerKick, kick, socket, connection.addr);
+                encode_and_send!(
+                    to_console,
+                    PacketTypes::ServerKick,
+                    kick,
+                    socket,
+                    connection.addr
+                );
 
                 for player in self.players.iter() {
                     encode_and_send!(
+                        to_console,
                         PacketTypes::ServerPlayerLeave,
                         to_broadcast.clone(),
                         socket,
@@ -519,6 +553,7 @@ impl World {
                     );
                     if players_loading_chunk.contains(&player) {
                         encode_and_send!(
+                            to_console,
                             PacketTypes::ServerPlayerLeaveLoaded,
                             to_broadcast_chunk.clone(),
                             socket,
@@ -538,13 +573,17 @@ impl World {
         Ok((chunk_x, chunk_y))
     }
 
-    pub fn get_highest_block_at(&self, x: u32) -> Result<(u32, u32), WorldError> {
+    pub fn get_highest_block_at(
+        &self,
+        to_console: ToConsole,
+        x: u32,
+    ) -> Result<(u32, u32), WorldError> {
         self.check_out_of_bounds_block(x, 0)?;
 
         let y: Vec<u32> = (0..self.height).collect();
         let slice: Result<Vec<Block>, WorldError> =
             y.par_iter().map(|y| self.get_block(x, *y)).collect();
-        debug!("world slice at x: {x}, {slice:#?}");
+        c_debug!(to_console, "world slice at x: {x}, {slice:#?}");
         let top_block_window = y.par_windows(2).find_last(|window| {
             let block_next = self.get_block(x, window[1]);
             let block_prev = self.get_block(x, window[0]);
@@ -561,7 +600,11 @@ impl World {
         })
     }
 
-    async fn tick_water(&mut self, socket: &UdpSocket) -> Result<(), WorldError> {
+    async fn tick_water(
+        &mut self,
+        to_console: ToConsole,
+        socket: &UdpSocket,
+    ) -> Result<(), WorldError> {
         let water_to_update: HashSet<&(u32, u32, Block)> = self
             .to_update
             .iter()
@@ -580,7 +623,7 @@ impl World {
         }
         self.to_update.retain(|pos| pos.2 != Block::Water);
         for (x, y) in to_update {
-            self.set_block_and_notify(socket, x, y, Block::Water)
+            self.set_block_and_notify(to_console.clone(), socket, x, y, Block::Water)
                 .await?;
         }
         Ok(())
@@ -617,11 +660,15 @@ impl World {
         block_pos_vec.try_into().unwrap()
     }
 
-    pub async fn tick(&mut self, socket: &UdpSocket) -> io::Result<()> {
+    pub async fn tick(
+        &mut self,
+        to_console: ToConsole,
+        socket: &UdpSocket,
+    ) -> io::Result<Duration> {
         let now = Instant::now();
 
-        if let Err(e) = self.tick_water(socket).await {
-            error!("Error occurred while ticking water: {e}")
+        if let Err(e) = self.tick_water(to_console.clone(), socket).await {
+            c_error!(to_console, "Error occurred while ticking water: {e}")
         };
 
         //collision
@@ -667,6 +714,7 @@ impl World {
                         .unwrap_or_default();
                     for conn in players_loading_chunk {
                         encode_and_send!(
+                            to_console,
                             PacketTypes::ServerPlayerUpdatePos,
                             packet.clone(),
                             socket,
@@ -679,8 +727,9 @@ impl World {
             self.players = new_players;
         }
 
-        debug!("tick took {:?}.", now.elapsed());
-        Ok(())
+        let time = now.elapsed();
+        c_debug!(to_console, "tick took {:?}.", time);
+        Ok(time)
     }
 }
 
