@@ -11,6 +11,7 @@
     pkgs.xorg.libX11 
     pkgs.libz 
     pkgs.SDL2
+    pkgs.evcxr
   ] ++ (with pkgs.python312Packages; [
     (pygame.overrideAttrs (oldAttrs: newAttrs: {
         env.PYGAME_DETECT_AVX2 = 1;
@@ -28,4 +29,6 @@
     enable = true;
     package = pkgs.python312Full;
   };
+
+  scripts.repl.exec = "evcxr";
 }
