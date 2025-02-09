@@ -59,7 +59,7 @@ pub enum CommandError {
     InvalidCommand(String),
     #[error("Missing Argument: {0}")]
     MissingArgument(String),
-    #[error("Wrong type for argument {arg} (needed an int): {err:?}")]
+    #[error("Wrong type for argument {arg}: {err:?}")]
     ArgParseError {
         arg: String,
         #[source]

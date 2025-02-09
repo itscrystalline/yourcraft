@@ -31,7 +31,7 @@ struct Settings {
     #[arg(long)]
     spawn_point: Option<u32>,
     #[arg(long, default_value = "16")]
-    spawn_range: u32,
+    spawn_range: NonZeroU32,
     #[arg(short, long, default_value = "false")]
     no_console: bool,
     #[arg(long, default_value = "false")]
@@ -91,7 +91,7 @@ async fn main() -> io::Result<()> {
         settings.world_height.into(),
         settings.chunk_size.into(),
         spawn_point,
-        settings.spawn_range,
+        settings.spawn_range.into(),
         settings.world_type,
     );
     let mut world = match world_res {
