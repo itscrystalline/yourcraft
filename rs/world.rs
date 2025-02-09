@@ -803,6 +803,11 @@ impl World {
                             conn.addr
                         );
                     }
+                    let move_packet = ServerPlayerUpdatePos {
+                        player_id: new_player.id,
+                        pos_x: new_player.server_player.x,
+                        pos_y: new_player.server_player.y,
+                    };
                     for conn in players_loading_chunk {
                         if new_players.contains(&conn) {
                             let enter_packet = ServerPlayerEnterLoaded {
@@ -819,19 +824,21 @@ impl World {
                                 conn.addr
                             );
                         }
-                        let move_packet = ServerPlayerUpdatePos {
-                            player_id: new_player.id,
-                            pos_x: new_player.server_player.x,
-                            pos_y: new_player.server_player.y,
-                        };
                         encode_and_send!(
                             to_console,
                             PacketTypes::ServerPlayerUpdatePos,
-                            move_packet,
+                            move_packet.clone(),
                             socket,
                             conn.addr
                         );
                     }
+                    encode_and_send!(
+                        to_console,
+                        PacketTypes::ServerPlayerUpdatePos,
+                        move_packet,
+                        socket,
+                        new_player.addr
+                    );
                 }
                 new_players.push(new_player);
             }
