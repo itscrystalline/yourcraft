@@ -20,6 +20,7 @@ use thiserror::Error;
 use tokio::{
     net::UdpSocket,
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
+    task::JoinHandle,
     time,
 };
 use tui_textarea::{Input, Key, TextArea};
@@ -164,6 +165,7 @@ pub struct Stats {
     pub players: usize,
 }
 pub enum ToConsoleType {
+    Quit,
     Log(Log),
     Stats(Stats),
 }
@@ -208,28 +210,20 @@ macro_rules! c_error {
     };
 }
 
-pub fn init(console_enabled: bool, debug: bool) -> (FromConsole, ToConsole) {
+pub fn init(console_enabled: bool, debug: bool) -> (JoinHandle<()>, FromConsole, ToConsole) {
     let (to_main, from_console) = mpsc::unbounded_channel::<Command>();
     // if console_enabled is false, simply keep the channel open but don't send messages
     let (to_console, from_main) = mpsc::unbounded_channel::<ToConsoleType>();
-    tokio::spawn(async move {
+    let console_thread = tokio::spawn(async move {
         let (send, mut recv) = (to_main, from_main);
         if console_enabled {
             match RatatuiConsole::init(send, recv, debug).await {
-                Ok(_) => (),
+                Ok(logs) => {
+                    logs.into_iter().for_each(|msg| println!("{msg}"));
+                }
                 Err(e) => error!("ratatui Console failed: {e}"),
             };
         } else {
-            env_logger::Builder::new()
-                .filter_level({
-                    if debug {
-                        LevelFilter::Debug
-                    } else {
-                        LevelFilter::Info
-                    }
-                })
-                .init();
-
             debug!("console thread started");
 
             while let Some(message) = recv.recv().await {
@@ -243,11 +237,12 @@ pub fn init(console_enabled: bool, debug: bool) -> (FromConsole, ToConsole) {
                     ToConsoleType::Stats(_) => {
                         warn!("stats message received but console is not enabled!")
                     }
+                    ToConsoleType::Quit => break,
                 }
             }
         }
     });
-    (from_console, to_console)
+    (console_thread, from_console, to_console)
 }
 
 struct RatatuiConsole<'a> {
@@ -283,7 +278,7 @@ impl RatatuiConsole<'_> {
         to_main: UnboundedSender<Command>,
         from_main: UnboundedReceiver<ToConsoleType>,
         debug: bool,
-    ) -> color_eyre::Result<()> {
+    ) -> color_eyre::Result<Vec<String>> {
         color_eyre::install()?;
         let terminal = ratatui::init();
         let console = RatatuiConsole {
@@ -302,7 +297,7 @@ impl RatatuiConsole<'_> {
         run
     }
 
-    async fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
+    async fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<Vec<String>> {
         let mut update_tick =
             time::interval(Duration::from_millis(constants::CONSOLE_UPDATE_RATE_MS));
         let mut input_events = EventStream::new();
@@ -320,7 +315,7 @@ impl RatatuiConsole<'_> {
             tokio::select! {
                 msg = self.from_main.recv() => {
                     if self.process_from_main(msg) {
-                        break Ok(());
+                        break Ok(self.get_logs_str());
                     }
                 }
                 _ = update_tick.tick() => {
@@ -330,17 +325,21 @@ impl RatatuiConsole<'_> {
                     match maybe_event {
                         Some(Ok(event)) => {
                             if self.process_terminal_events(event.into()) {
-                                break Ok(());
+                                 break Ok(self.get_logs_str());
                             }
                         },
                         Some(Err(_)) => {/*silently discard*/},
                         None => {
-                            break Ok(());
+                             break Ok(self.get_logs_str());
                         }
                     }
                 }
             }
         }
+    }
+
+    fn get_logs_str(self) -> Vec<String> {
+        self.logs.into_iter().map(|line| line.to_string()).collect()
     }
 
     fn process_from_main(&mut self, msg: Option<ToConsoleType>) -> bool {
@@ -356,7 +355,7 @@ impl RatatuiConsole<'_> {
                 LogLevel::Error => log_console!(self, "ERROR".red(), log.1),
             },
             Some(ToConsoleType::Stats(stats)) => self.stats = stats,
-            None => return true,
+            Some(ToConsoleType::Quit) | None => return true,
         }
         false
     }

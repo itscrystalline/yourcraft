@@ -5,7 +5,7 @@ use crate::network::{
 };
 use crate::network::{Packet, ServerPlayerLeave, ServerPlayerLeaveLoaded};
 use crate::player::Player;
-use crate::{c_debug, c_error, c_info};
+use crate::{c_debug, c_error, c_info, WorldType};
 use get_size::GetSize;
 use rand::Rng;
 use rayon::prelude::*;
@@ -98,7 +98,39 @@ macro_rules! define_blocks {
 }
 
 impl World {
-    pub fn generate_empty(
+    pub fn generate(
+        to_console: ToConsole,
+        width: u32,
+        height: u32,
+        chunk_size: u32,
+        spawn_point: u32,
+        spawn_range: u32,
+        type_settings: WorldType,
+    ) -> Result<World, WorldError> {
+        let base = World::generate_empty(
+            to_console.clone(),
+            width,
+            height,
+            chunk_size,
+            spawn_point,
+            spawn_range,
+        )?;
+
+        Ok(match type_settings {
+            WorldType::Empty => base,
+            WorldType::Flat { grass_height } => {
+                World::generate_flat(to_console, base, grass_height)?
+            }
+            WorldType::Terrain {
+                base_height,
+                upper_height,
+                passes,
+            } => {
+                World::generate_terrain(to_console, base, base_height, upper_height, passes.into())?
+            }
+        })
+    }
+    fn generate_empty(
         to_console: ToConsole,
         width: u32,
         height: u32,
@@ -143,84 +175,61 @@ impl World {
         }
     }
 
-    pub fn generate_flat(
+    fn generate_flat(
         to_console: ToConsole,
-        width: u32,
-        height: u32,
-        chunk_size: u32,
+        mut world: World,
         grass_level: u32,
-        spawn_point: u32,
-        spawn_range: u32,
     ) -> Result<World, WorldError> {
-        let mut world = World::generate_empty(
-            to_console.clone(),
-            width,
-            height,
-            chunk_size,
-            spawn_point,
-            spawn_range,
-        )?;
-
         let start = Instant::now();
 
         if grass_level != 0 {
-            for idx in 0..width * grass_level {
-                let x = idx % width;
-                let y = idx / width;
+            for idx in 0..world.width * grass_level {
+                let x = idx % world.width;
+                let y = idx / world.width;
                 world.set_block(x, y, Block::Stone)?
             }
         }
-        for x in 0..width {
+        for x in 0..world.width {
             world.set_block(x, grass_level, Block::Grass)?
         }
 
         c_info!(
             to_console,
             "filled {} * {} area with grass and stone in {:?}",
-            width,
+            world.width,
             grass_level,
             start.elapsed()
         );
         Ok(world)
     }
 
-    pub fn generate_terrain(
+    fn generate_terrain(
         to_console: ToConsole,
-        width: u32,
-        height: u32,
-        chunk_size: u32,
+        mut world: World,
         base_height: u32,
         upper_height: u32,
         chop_passes: u32,
-        spawn_point: u32,
-        spawn_range: u32,
     ) -> Result<World, WorldError> {
-        let mut world = World::generate_empty(
-            to_console.clone(),
-            width,
-            height,
-            chunk_size,
-            spawn_point,
-            spawn_range,
-        )?;
-
         let start = Instant::now();
 
-        if 2u32.pow(chop_passes) > width {
-            return Err(WorldError::TerrainTooDetailed(chop_passes, width));
+        if 2u32.pow(chop_passes) > world.width {
+            return Err(WorldError::TerrainTooDetailed(chop_passes, world.width));
         }
-        if upper_height > height {
-            return Err(WorldError::InvalidGenerationRange(upper_height, height));
+        if upper_height > world.height {
+            return Err(WorldError::InvalidGenerationRange(
+                upper_height,
+                world.height,
+            ));
         }
         if base_height >= upper_height {
             return Err(WorldError::GenerationTooThin);
         }
 
-        let mut height_map: Vec<u32> = vec![0; width as usize];
+        let mut height_map: Vec<u32> = vec![0; world.width as usize];
         Self::midpoint_displacement(
             &mut height_map,
             0,
-            (width - 1) as usize,
+            (world.width - 1) as usize,
             base_height,
             upper_height,
             chop_passes,

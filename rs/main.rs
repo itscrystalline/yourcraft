@@ -1,6 +1,7 @@
 use crate::world::World;
 use clap::{Parser, Subcommand};
 use console::Stats;
+use log::{error, info, LevelFilter};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::cmp::max;
 use std::io;
@@ -40,7 +41,7 @@ struct Settings {
 }
 
 #[derive(Subcommand, Debug)]
-enum WorldType {
+pub enum WorldType {
     Empty,
     Flat {
         #[arg(short, long, default_value = "4")]
@@ -59,7 +60,19 @@ enum WorldType {
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let settings = Settings::parse();
-    let (mut from_console, to_console) = console::init(!settings.no_console, settings.debug);
+
+    env_logger::Builder::new()
+        .filter_level({
+            if settings.debug {
+                LevelFilter::Debug
+            } else {
+                LevelFilter::Info
+            }
+        })
+        .init();
+
+    let (console_thread, mut from_console, to_console) =
+        console::init(!settings.no_console, settings.debug);
 
     c_info!(to_console, "Starting up with {:?}", settings);
 
@@ -72,45 +85,22 @@ async fn main() -> io::Result<()> {
         .spawn_point
         .unwrap_or(u32::from(settings.world_width) / 2);
 
-    let world_res = match settings.world_type {
-        WorldType::Empty => World::generate_empty(
-            to_console.clone(),
-            settings.world_width.into(),
-            settings.world_height.into(),
-            settings.chunk_size.into(),
-            spawn_point,
-            settings.spawn_range,
-        ),
-        WorldType::Flat { grass_height } => World::generate_flat(
-            to_console.clone(),
-            settings.world_width.into(),
-            settings.world_height.into(),
-            settings.chunk_size.into(),
-            grass_height,
-            spawn_point,
-            settings.spawn_range,
-        ),
-        WorldType::Terrain {
-            base_height,
-            upper_height,
-            passes,
-        } => World::generate_terrain(
-            to_console.clone(),
-            settings.world_width.into(),
-            settings.world_height.into(),
-            settings.chunk_size.into(),
-            base_height,
-            upper_height,
-            passes.into(),
-            spawn_point,
-            settings.spawn_range,
-        ),
-    };
+    let world_res = World::generate(
+        to_console.clone(),
+        settings.world_width.into(),
+        settings.world_height.into(),
+        settings.chunk_size.into(),
+        spawn_point,
+        settings.spawn_range,
+        settings.world_type,
+    );
     let mut world = match world_res {
         Ok(w) => w,
         Err(e) => {
-            c_error!(to_console, "Error creating world: {e}");
-            exit(1)
+            let _ = to_console.send(console::ToConsoleType::Quit);
+            console_thread.await.unwrap();
+            error!("Error creating world: {e}");
+            exit(1);
         }
     };
 
@@ -129,6 +119,8 @@ async fn main() -> io::Result<()> {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
                 world.shutdown(to_console.clone(), &socket).await?;
+                let _ = to_console.send(console::ToConsoleType::Quit);
+                console_thread.await.unwrap();
                 break;
             }
             packet = socket.recv_from(&mut buf) => {
@@ -187,7 +179,8 @@ async fn main() -> io::Result<()> {
             command_opt = from_console.recv() => {
                 if let Some(command) = command_opt {
                     if console::process_command(to_console.clone(), &socket, &mut world, command, tick_times_saved, last_tick_time).await? {
-                        ratatui::restore();
+                        let _ = to_console.send(console::ToConsoleType::Quit);
+                        console_thread.await.unwrap();
                         break;
                     }
                 }
@@ -195,6 +188,6 @@ async fn main() -> io::Result<()> {
         }
     }
 
-    println!("Server shutdown complete after being up for {uptime:?}.");
+    info!("Server shutdown complete after being up for {uptime:?}.");
     Ok(())
 }
