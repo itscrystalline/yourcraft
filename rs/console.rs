@@ -1,7 +1,7 @@
 use crossterm::event::EventStream;
 use futures::{FutureExt, StreamExt};
 use get_size::GetSize;
-use log::{debug, error, info, warn, LevelFilter};
+use log::{debug, error, info, warn};
 use ratatui::{
     layout::{Constraint, Layout},
     style::{Style, Stylize},
