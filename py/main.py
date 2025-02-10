@@ -59,15 +59,6 @@ position2D.y = INIT_DATA['spawn_y'] * 10
 WorldPosition.x = INIT_DATA['spawn_x'] * 10
 WorldPosition.y = INIT_DATA['spawn_y'] * 10
 
-# Set chunks
-cliNet.send(network.ClientRequestChunk(0, 0))
-INIT_CHUNK: list = cliNet.recv()['data']['chunk']['blocks']
-World[(0, -1)] = {}
-for i in range(0, INIT_CHUNK.__len__()):
-    World[(0, -1)][(i % 16 * 10, i // 16 * 10)] = INIT_CHUNK[INIT_CHUNK.__len__() - 1 - i]
-
-print(World)
-
 # Network thread with proper handling of shared resources
 network_lock = threading.Lock()
 
@@ -88,7 +79,6 @@ def NetworkThread():
                 print("heartbeat received")
                 cliNet.send(network.Heartbeat())
             elif receiving['t'] == network.CHUNK_UPDATE:
-                print(receiving)
                 updated_chunk = receiving['data']['chunk']
                 # Update the world data with the new chunk
                 chunk_coord = (updated_chunk['chunk_x'], updated_chunk['chunk_y']-1)
@@ -105,6 +95,7 @@ def main():
         dt = clock.tick(50) / 1000  # Calculate time per frame
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                cliNet.send(network.Goodbye())
                 pygame.quit()
                 running = False
 
@@ -156,18 +147,19 @@ def main():
 
         for loadChunkX in range(chunkCoord[0] - dChunkX, chunkCoord[0] + dChunkX + 2):
             for loadChunkY in range(chunkCoord[1] - dChunkY, chunkCoord[1] + dChunkY + 3):
-                loadChunk = (loadChunkX, loadChunkY-1)
+                loadChunk = (loadChunkX, loadChunkY)
                 if loadChunk in World:
                     for blockPos, blockType in World[loadChunk].items():
                         blockScreenPos = (
-                            loadChunk[0] * 160 - blockPos[0] + WorldPosition.x + screen_width / 2,
-                            -loadChunk[1] * 160 + blockPos[1] - WorldPosition.y - 150 + screen_height / 2
+                            loadChunk[0] * 160 - blockPos[0] + WorldPosition.x + 145 + screen_width / 2,
+                            -loadChunk[1] * 160 + blockPos[1] - WorldPosition.y - 230 + screen_height / 2
                         )
                         pygame.draw.rect(screen, BlockType[blockType], (blockScreenPos[0], blockScreenPos[1], 10, 10))
                 else:
-                    if loadChunkX < 0 or loadChunkY < 0:
+                    if (loadChunkX < 0) or (loadChunkY < 0):
                         continue
                     World[loadChunk] = {}
+                    print(loadChunk)
                     cliNet.send(network.ClientRequestChunk(loadChunk[0], loadChunk[1]))
 
         # Draw player
