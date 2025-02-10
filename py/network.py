@@ -3,6 +3,7 @@ import socket
 
 HELLO = 1
 PLAYER_COORDINATES = 2
+CHUNK_UPDATE = 4
 GOODBYE = 10
 KICK = 16
 HEARTBEAT_SERVER = 17
@@ -22,8 +23,9 @@ class Packet:
 
 class ServerConnection:
     def __init__(self, ip: str, port: int = 8475):
-        self.socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.ip_port = (ip, port)
+
     def send(self, packet: Packet):
         self.socket.sendto(packet.serialize(), self.ip_port)
 
@@ -54,15 +56,18 @@ class ClientRequestChunk (Packet):
         self.chunk_coords_x = x
         self.chunk_coords_y = y
 
-if __name__ == "__main__":
+def test():
     conn = ServerConnection("127.0.0.1")
 
     conn.send(Hello("test"))
     INIT_DATA = conn.recv()
 
+    print(INIT_DATA)
+
     conn.send(ClientRequestChunk(0, 0))
-    chunk = conn.recv()
-    print(chunk)
+    chunk = conn.recv()['data']['chunk']
+    # print(chunk)
+    print(chunk['blocks'].__len__())
 
     while True:
         receiving = conn.recv()

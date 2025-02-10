@@ -5,6 +5,7 @@ import dataclasses
 
 class Player(Entity):
     keys = ["w","a","s","d","e","q"]
+    player_id = None
     def __post_init__(self):
         super().__post_init__()
 
