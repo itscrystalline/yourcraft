@@ -373,11 +373,15 @@ impl RatatuiConsole<'_> {
 
     fn calculate_line_heights(&self) -> u16 {
         let (width, _) = self.consle_rect;
-        self.logs
-            .lines
-            .par_iter()
-            .map(|l| (l.width() as u16 / (width - 2)) + 1)
-            .sum()
+        if width > 2 {
+            self.logs
+                .lines
+                .par_iter()
+                .map(|l| (l.width() as u16 / (width - 2)) + 1)
+                .sum()
+        } else {
+            self.logs.lines.len() as u16
+        }
     }
 
     fn process_terminal_events(&mut self, input: Input) -> bool {
