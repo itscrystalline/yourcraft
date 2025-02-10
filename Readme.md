@@ -89,8 +89,8 @@ kicked from the server.
 0: Invalid Packet.
 ✅✅ 1: [C2S] ClientHello (name: str)                                                                                           
 ✅✅ 2: [S2C] ServerSync (player_id: int, world_width: int, world_height: int, chunk_size: int, spawn_x: float, spawn_y: float) 
-🟨⬛ 3: [C2S] ClientRequestChunk (chunk_coords_x: int, chunk_coords_y: int)                                                     
-🟨⬛ 4: [S2C] ServerChunkResponse (chunk: Chunk, see world.rs for impl)                                                         
+✅✅ 3: [C2S] ClientRequestChunk (chunk_coords_x: int, chunk_coords_y: int)                                                     
+✅✅ 4: [S2C] ServerChunkResponse (chunk: Chunk, see world.rs for impl)                                                         
 🟨⬛ 5: [C2S] ClientUnloadChunk (chunk_coords_x: int, chunk_coords_y: int)                                                      
 🟨⬛ 6: [S2C] ServerPlayerJoin (player_name: str, player_id: int)                                                               
 🟨⬛ 7: [S2C] ServerPlayerEnterLoaded (player_name: str, player_id: int, pos_x: float, pos_y: float)                            
