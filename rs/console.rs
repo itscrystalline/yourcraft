@@ -257,6 +257,7 @@ struct RatatuiConsole<'a> {
     to_main: UnboundedSender<Command>,
     from_main: UnboundedReceiver<ToConsoleType>,
     debug: bool,
+    autoscroll: bool,
     stats: Stats,
     consle_rect: (u16, u16),
     logs: Text<'a>,
@@ -293,6 +294,7 @@ impl RatatuiConsole<'_> {
             to_main,
             from_main,
             debug,
+            autoscroll: true,
             stats: Default::default(),
             consle_rect: (0, 0),
             logs: Default::default(),
@@ -363,6 +365,9 @@ impl RatatuiConsole<'_> {
             Some(ToConsoleType::Stats(stats)) => self.stats = stats,
             Some(ToConsoleType::Quit) | None => return true,
         }
+        if self.autoscroll {
+            self.scroll = self.calculate_line_heights();
+        }
         false
     }
 
@@ -392,6 +397,9 @@ impl RatatuiConsole<'_> {
             } => {
                 let scroll_lines = if shift { 10 } else { 1 };
                 self.scroll = self.scroll.saturating_add(scroll_lines);
+            }
+            Input { key: Key::Tab, .. } => {
+                self.autoscroll = !self.autoscroll;
             }
             Input {
                 key: Key::Char('c'),
@@ -479,6 +487,12 @@ impl RatatuiConsole<'_> {
         let actual_scroll_position = self.scroll.saturating_sub(self.consle_rect.1 - 2);
         self.scroll_state = self.scroll_state.position(actual_scroll_position.into());
 
+        let autoscroll = if self.autoscroll {
+            "ON".green()
+        } else {
+            "OFF".red()
+        };
+
         let log_paragraph = Paragraph::new(self.logs.clone())
             .gray()
             .wrap(Wrap { trim: true })
@@ -501,6 +515,9 @@ impl RatatuiConsole<'_> {
                             " ─".into(),
                         ])
                         .right_aligned(),
+                    )
+                    .title_bottom(
+                        Line::from(vec!["Autoscroll (↹ ): ".into(), autoscroll]).centered(),
                     )
                     .border_type(widgets::BorderType::Rounded),
             )
