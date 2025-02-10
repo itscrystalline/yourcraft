@@ -271,3 +271,6 @@ fabric.properties
 # .idea misc and profile
 .idea/misc.xml
 .idea/inspectionProfiles
+
+flamegraph.svg
+perf*

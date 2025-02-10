@@ -394,7 +394,7 @@ impl World {
         let players_loading_chunk =
             &mut self.player_loaded[(chunk_y * self.width_chunks + chunk_x) as usize];
         match players_loading_chunk
-            .par_iter()
+            .iter()
             .any(|&loading| loading == player_loading_id)
         {
             true => Err(WorldError::ChunkAlreadyLoaded),
@@ -653,7 +653,7 @@ impl World {
             let block_prev = self.get_block(x, window[0]);
 
             if let (Ok(block_next), Ok(block_prev)) = (block_next, block_prev) {
-                block_next == Block::Air && block_prev != Block::Air
+                !is_solid(block_next) && is_solid(block_prev)
             } else {
                 false
             }
@@ -671,20 +671,22 @@ impl World {
     ) -> Result<(), WorldError> {
         let water_to_update: HashSet<&(u32, u32, Block)> = self
             .to_update
-            .iter()
+            .par_iter()
             .filter(|pos| pos.2 == Block::Water)
             .collect();
-        let mut to_update: HashSet<(u32, u32)> = HashSet::new();
-        for (x, y, _) in water_to_update.iter() {
-            let neighbours = World::get_water_neighbours(*x, *y);
-            for (bl_pos_x, bl_pos_y) in neighbours {
+
+        let to_update: HashSet<(u32, u32)> = water_to_update
+            .par_iter()
+            .flat_map(|(x, y, _)| World::get_water_neighbours(*x, *y))
+            .filter_map(|(bl_pos_x, bl_pos_y)| {
                 if let Ok(bl) = self.get_block(bl_pos_x, bl_pos_y) {
                     if !is_solid(bl) && bl != Block::Water {
-                        to_update.insert((bl_pos_x, bl_pos_y));
+                        return Some((bl_pos_x, bl_pos_y));
                     }
                 }
-            }
-        }
+                None
+            })
+            .collect();
         self.to_update.retain(|pos| pos.2 != Block::Water);
         for (x, y) in to_update {
             self.set_block_and_notify(to_console.clone(), socket, x, y, Block::Water)

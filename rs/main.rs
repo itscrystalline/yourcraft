@@ -36,6 +36,8 @@ struct Settings {
     no_console: bool,
     #[arg(long, default_value = "false")]
     debug: bool,
+    #[arg(long, default_value = "false")]
+    no_heartbeat: bool,
     #[command(subcommand)]
     world_type: WorldType,
 }
@@ -127,7 +129,9 @@ async fn main() -> io::Result<()> {
                 network::incoming_packet_handler(to_console.clone(), &socket, &mut buf, &mut world, packet?).await?
             }
             _ = heartbeat_tick.tick() => {
-                network::heartbeat(to_console.clone(), &socket, &mut world).await?;
+                if !settings.no_heartbeat {
+                    network::heartbeat(to_console.clone(), &socket, &mut world).await?;
+                }
             }
             _ = world_tick.tick() => {
                 last_tick_time = world.tick(to_console.clone(), &socket).await?;
