@@ -65,9 +65,7 @@ impl Player {
     pub fn do_fall(mut self, surrounding: [BlockPos; 6]) -> (Self, bool) {
         if !Self::is_grounded(self.y, &surrounding) {
             self.velocity += self.acceleration;
-            self.velocity = self
-                .velocity
-                .clamp(-constants::TERMINAL_VELOCITY, constants::TERMINAL_VELOCITY);
+            self.velocity = self.velocity.max(-constants::TERMINAL_VELOCITY);
             self.y += self.velocity;
             self.acceleration -= constants::G;
             (self, true)
