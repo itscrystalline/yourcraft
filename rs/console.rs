@@ -485,20 +485,20 @@ impl RatatuiConsole<'_> {
             .block(
                 widgets::Block::bordered()
                     .gray()
-                    .title("Logs".bold().into_left_aligned_line())
+                    .title(" Logs ".bold().into_left_aligned_line())
                     .title(
-                        format!("Up for {}", humantime::format_duration(self.stats.uptime))
+                        format!(" Up for {} ", humantime::format_duration(self.stats.uptime))
                             .bold()
                             .into_centered_line(),
                     )
                     .title(
                         Line::from(vec![
-                            format!("{} TPS", self.stats.tps).bold(),
+                            format!(" {} TPS", self.stats.tps).bold(),
                             " ".into(),
                             format!("({:?}/t)", self.stats.mspt).into(),
                             " ".into(),
                             format!("{} Online", self.stats.players).bold(),
-                            "─".into(),
+                            " ─".into(),
                         ])
                         .right_aligned(),
                     )
