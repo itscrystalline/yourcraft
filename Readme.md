@@ -96,7 +96,7 @@ kicked from the server.
 🟨⬛ 7: [S2C] ServerPlayerEnterLoaded (player_name: str, player_id: int, pos_x: float, pos_y: float)                            
 🟨⬛ 8: [S2C] ServerPlayerLeaveLoaded (player_name: str, player_id: int)                                                        
 🟨⬛ 9: [S2C] ServerPlayerLeave (player_name: str, player_id: int)                                                              
-✅⬛ 10: [C2S] ClientGoodbye ()                                                                                                 
+✅✅ 10: [C2S] ClientGoodbye ()                                                                                                 
 🟨⬛ 11: [C2S] ClientPlaceBlock (block: Block Enum as int, x: int, y: int)                                                      
 🟨⬛ 12: [S2C] ServerUpdateBlock (block: Block Enum as int, x: int, y: int)                                                     
 🟨⬛ 13: [C2S] ClientPlayerMoveX (pos_x: float)                                                                                 
