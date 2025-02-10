@@ -91,7 +91,7 @@ async fn main() -> io::Result<()> {
         settings.world_height.into(),
         settings.chunk_size.into(),
         spawn_point,
-        settings.spawn_range.into(),
+        settings.spawn_range,
         settings.world_type,
     );
     let mut world = match world_res {

@@ -14,6 +14,7 @@ use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::io;
 use std::iter::zip;
+use std::num::NonZeroU32;
 use std::ops::Range;
 use std::time::{Duration, Instant};
 use strum::EnumString;
@@ -56,7 +57,7 @@ pub struct World {
     player_loaded: Vec<Vec<u32>>,
     to_update: HashSet<(u32, u32, Block)>,
     pub spawn_point: u32,
-    pub spawn_range: u32,
+    pub spawn_range: NonZeroU32,
 }
 
 #[derive(Debug, Clone)]
@@ -104,7 +105,7 @@ impl World {
         height: u32,
         chunk_size: u32,
         spawn_point: u32,
-        spawn_range: u32,
+        spawn_range: NonZeroU32,
         type_settings: WorldType,
     ) -> Result<World, WorldError> {
         let base = World::generate_empty(
@@ -136,7 +137,7 @@ impl World {
         height: u32,
         chunk_size: u32,
         spawn_point: u32,
-        spawn_range: u32,
+        spawn_range: NonZeroU32,
     ) -> Result<World, WorldError> {
         if width % chunk_size != 0 || height % chunk_size != 0 {
             Err(WorldError::MismatchedChunkSize)
@@ -349,9 +350,9 @@ impl World {
 
     pub fn get_spawn(&self) -> u32 {
         let spawn_range = Range {
-            start: self.spawn_point.saturating_sub(self.spawn_range),
+            start: self.spawn_point.saturating_sub(self.spawn_range.into()),
             end: std::cmp::min(
-                self.spawn_point.saturating_add(self.spawn_range),
+                self.spawn_point.saturating_add(self.spawn_range.into()),
                 self.width,
             ),
         };
@@ -364,8 +365,8 @@ impl World {
         Ok(())
     }
 
-    pub fn set_spawn_range(&mut self, range: u32) -> Result<(), WorldError> {
-        if range > (self.width / 2) {
+    pub fn set_spawn_range(&mut self, range: NonZeroU32) -> Result<(), WorldError> {
+        if range.get() > (self.width / 2) {
             Err(WorldError::SpawnRangeTooLarge)
         } else {
             self.spawn_range = range;

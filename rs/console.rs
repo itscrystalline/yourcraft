@@ -13,7 +13,7 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIter
 use rayon::prelude::*;
 use std::{
     io,
-    num::{ParseFloatError, ParseIntError},
+    num::{NonZeroU32, ParseFloatError, ParseIntError},
     str::FromStr,
 };
 use thiserror::Error;
@@ -50,7 +50,7 @@ pub enum Command {
     SetBlock { pos: BlockPos },
     GetBlock { x: u32, y: u32 },
     SetSpawn(u32),
-    SetSpawnRange(u32),
+    SetSpawnRange(NonZeroU32),
 }
 
 #[derive(Error, Debug)]
@@ -59,7 +59,7 @@ pub enum CommandError {
     InvalidCommand(String),
     #[error("Missing Argument: {0}")]
     MissingArgument(String),
-    #[error("Wrong type for argument {arg}: {err:?}")]
+    #[error("Wrong type for argument {arg}: {err}")]
     ArgParseError {
         arg: String,
         #[source]
@@ -71,6 +71,8 @@ pub enum CommandError {
 pub enum ArgParseError {
     #[error("Cannot parse int: `{0}`")]
     Int(#[from] ParseIntError),
+    #[error("Value cannot be zero!")]
+    ZeroInt,
     #[error("Cannot parse float: `{0}`")]
     Float(#[from] ParseFloatError),
     #[error("Cannot parse Block: `{0}`")]
@@ -143,7 +145,11 @@ impl FromStr for Command {
             }
             "spawn_range" => {
                 let range = next_type_token_or_err!(tokens, "range", u32);
-                Ok(Command::SetSpawnRange(range))
+                let nonzero_range = NonZeroU32::new(range).ok_or(CommandError::ArgParseError {
+                    arg: "range".to_string(),
+                    err: ArgParseError::ZeroInt,
+                })?;
+                Ok(Command::SetSpawnRange(nonzero_range))
             }
             c => Err(CommandError::InvalidCommand(c.to_string())),
         }
