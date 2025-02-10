@@ -392,9 +392,9 @@ impl World {
     ) -> Result<&Chunk, WorldError> {
         self.check_out_of_bounds_chunk(chunk_x, chunk_y)?;
         let players_loading_chunk =
-            &mut self.player_loaded[(chunk_y * self.height_chunks + chunk_x) as usize];
+            &mut self.player_loaded[(chunk_y * self.width_chunks + chunk_x) as usize];
         match players_loading_chunk
-            .iter()
+            .par_iter()
             .any(|&loading| loading == player_loading_id)
         {
             true => Err(WorldError::ChunkAlreadyLoaded),
@@ -419,7 +419,7 @@ impl World {
     ) -> Result<(), WorldError> {
         self.check_out_of_bounds_chunk(chunk_x, chunk_y)?;
         let players_loading_chunk =
-            &mut self.player_loaded[(chunk_y * self.height_chunks + chunk_x) as usize];
+            &mut self.player_loaded[(chunk_y * self.width_chunks + chunk_x) as usize];
         players_loading_chunk.retain(|&con| player_loading_id != con);
         Ok(())
     }
@@ -439,7 +439,7 @@ impl World {
     ) -> Result<Vec<&ClientConnection>, WorldError> {
         self.get_chunk(chunk_x, chunk_y)?; // to perform the oob check
         let players_loading_ids =
-            &self.player_loaded[(chunk_y * self.height_chunks + chunk_x) as usize];
+            &self.player_loaded[(chunk_y * self.width_chunks + chunk_x) as usize];
         let players_loading = players_loading_ids
             .iter()
             .map(|&id| self.players.iter().find(|&conn| conn.id == id).unwrap())
