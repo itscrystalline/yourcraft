@@ -30,7 +30,7 @@ BLUE = (0, 0, 255)
 currentPlayer = classic_entity.Player()
 currentPlayer.keys = [pygame.K_w, pygame.K_a, pygame.K_s, pygame.K_d, pygame.K_e, pygame.K_q]
 position2D = currentPlayer.getComponent("transform2D").getVariable("position")
-speed = 100
+speed = 1000
 
 otherPlayers = []
 
@@ -62,8 +62,10 @@ WorldPosition.y = INIT_DATA['spawn_y'] * 10
 # Network thread with proper handling of shared resources
 network_lock = threading.Lock()
 
+running = True
+
 def NetworkThread():
-    global World, position2D
+    global World, position2D, netThread, running
 
     while True:
         time.sleep(0.016)  # Sleep for 16ms (for approx. 60FPS)
@@ -74,7 +76,8 @@ def NetworkThread():
             print(receiving)
             if receiving['t'] == network.KICK:
                 print("kicked because", receiving['data']['msg'])
-                exit(0)
+                running = False
+                return
             elif receiving['t'] == network.HEARTBEAT_SERVER:
                 print("heartbeat received")
                 cliNet.send(network.Heartbeat())
@@ -90,7 +93,7 @@ def NetworkThread():
 
 # Game loop
 def main():
-    running = True
+    global running
     while running:
         dt = clock.tick(50) / 1000  # Calculate time per frame
         for event in pygame.event.get():
