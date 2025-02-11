@@ -200,7 +200,8 @@ macro_rules! unwrap_packet_or_ignore {
             Ok(packet) => packet,
             Err(err) => {
                 c_error!($to_console, "Failed to deserialize packet: {}", err);
-                c_error!($to_console, "Received differing packet content from what type of packet suggests ({})! ignoring.", $packet.t);
+                c_error!($to_console, "Received differing packet content from what type of packet suggests ({:?})! ignoring.",
+                                        PacketTypes::from($packet.t));
                 return Ok(());
             }
         }
