@@ -68,7 +68,6 @@ impl ClientConnection {
     }
 
     pub fn new_at(
-        to_console: ToConsole,
         addr: SocketAddr,
         world: &World,
         x: u32,
@@ -78,7 +77,7 @@ impl ClientConnection {
         Ok(ClientConnection {
             addr,
             name,
-            server_player: Player::spawn_at(to_console, world, x)?,
+            server_player: Player::spawn_at(world, x)?,
             id: rng.next_u32(),
             connection_alive: true,
         })
@@ -323,13 +322,7 @@ async fn process_client_packet(
             let spawn_x = world.get_spawn();
             let connection = unwrap_or_return_early!(
                 to_console,
-                ClientConnection::new_at(
-                    to_console.clone(),
-                    addr,
-                    world,
-                    spawn_x,
-                    hello_packet.name
-                ),
+                ClientConnection::new_at(addr, world, spawn_x, hello_packet.name),
                 "cannot spawn player: {}"
             );
             let spawn_block_pos = (

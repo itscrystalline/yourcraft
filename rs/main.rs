@@ -54,8 +54,10 @@ pub enum WorldType {
         base_height: u32,
         #[arg(short, long, default_value = "128")]
         upper_height: u32,
-        #[arg(short, long, default_value = "6")]
-        passes: NonZeroU32,
+        #[arg(short, long)]
+        seed: Option<u64>,
+        #[arg(short, long, default_value = "5")]
+        noise_passes: usize,
     },
 }
 

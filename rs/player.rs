@@ -15,11 +15,11 @@ pub struct Player {
 }
 
 impl Player {
-    pub fn spawn_at(to_console: ToConsole, world: &World, x: u32) -> Result<Self, WorldError> {
-        let highest = world.get_highest_block_at(to_console, x)?;
+    pub fn spawn_at(world: &World, x: u32) -> Result<Self, WorldError> {
+        let (highest_x, highest_y) = world.get_highest_block_at(x)?;
         Ok(Player {
-            x: highest.0 as f32,
-            y: highest.1 as f32,
+            x: highest_x as f32,
+            y: (highest_y + 1) as f32,
             hitbox_width: constants::HITBOX_WIDTH,
             hitbox_height: constants::HITBOX_HEIGHT,
             velocity: 0.0,

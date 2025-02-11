@@ -7,7 +7,9 @@ use crate::network::{Packet, ServerPlayerLeave, ServerPlayerLeaveLoaded};
 use crate::player::Player;
 use crate::{c_debug, c_error, c_info, WorldType};
 use get_size::GetSize;
-use rand::Rng;
+use noise::{NoiseFn, Perlin};
+use rand::rngs::SmallRng;
+use rand::{Rng, RngCore, SeedableRng};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -125,10 +127,16 @@ impl World {
             WorldType::Terrain {
                 base_height,
                 upper_height,
-                passes,
-            } => {
-                World::generate_terrain(to_console, base, base_height, upper_height, passes.into())?
-            }
+                seed,
+                noise_passes,
+            } => World::generate_terrain(
+                to_console,
+                base,
+                base_height,
+                upper_height,
+                seed,
+                noise_passes,
+            )?,
         })
     }
     fn generate_empty(
@@ -209,13 +217,11 @@ impl World {
         mut world: World,
         base_height: u32,
         upper_height: u32,
-        chop_passes: u32,
+        seed: Option<u64>,
+        noise_passes: usize,
     ) -> Result<World, WorldError> {
         let start = Instant::now();
 
-        if 2u32.pow(chop_passes) > world.width {
-            return Err(WorldError::TerrainTooDetailed(chop_passes, world.width));
-        }
         if upper_height > world.height {
             return Err(WorldError::InvalidGenerationRange(
                 upper_height,
@@ -226,17 +232,32 @@ impl World {
             return Err(WorldError::GenerationTooThin);
         }
 
-        let mut height_map: Vec<u32> = vec![0; world.width as usize];
-        Self::midpoint_displacement(
-            &mut height_map,
-            0,
-            (world.width - 1) as usize,
-            base_height,
-            upper_height,
-            chop_passes,
-        );
-        Self::interpolate(&mut height_map, base_height);
-        Self::smooth(&mut height_map);
+        let master_seed = seed.unwrap_or(rand::rng().next_u64());
+        let mut seed_generator = SmallRng::seed_from_u64(master_seed);
+        let height_range = (upper_height - base_height) as f64;
+
+        let generators: Vec<(Perlin, f64, f64)> = (0..noise_passes)
+            .map(|pass| {
+                (
+                    Perlin::new(seed_generator.next_u32()),
+                    (height_range / ((pass as f64 * 2.0) + 1.0)),
+                    10f64.powf(-((noise_passes - pass) as f64)),
+                )
+            })
+            .collect();
+
+        c_debug!(to_console, "generators: {:?}", generators);
+
+        let mut height_map: Vec<u32> = vec![base_height; world.width as usize];
+        for (generator, range, freq) in generators {
+            height_map.iter_mut().enumerate().for_each(|(idx, height)| {
+                let x = idx as f64;
+                let noise_get = generator.get([x * freq]) * range;
+                *height += noise_get.round() as u32;
+            });
+        }
+
+        height_map[0] = 4;
 
         for (x, &height) in height_map.iter().enumerate() {
             if height != 0 {
@@ -249,8 +270,8 @@ impl World {
 
         c_info!(
             to_console,
-            "Generation of terrain with {} passes took {:?}.",
-            chop_passes,
+            "Generation of terrain with seed {} took {:?}.",
+            master_seed,
             start.elapsed()
         );
         Ok(world)
@@ -637,17 +658,10 @@ impl World {
         Ok((chunk_x, chunk_y))
     }
 
-    pub fn get_highest_block_at(
-        &self,
-        to_console: ToConsole,
-        x: u32,
-    ) -> Result<(u32, u32), WorldError> {
+    pub fn get_highest_block_at(&self, x: u32) -> Result<(u32, u32), WorldError> {
         self.check_out_of_bounds_block(x, 0)?;
 
         let y: Vec<u32> = (0..self.height).collect();
-        let slice: Result<Vec<Block>, WorldError> =
-            y.par_iter().map(|y| self.get_block(x, *y)).collect();
-        c_debug!(to_console, "world slice at x: {x}, {slice:#?}");
         let top_block_window = y.par_windows(2).find_last(|window| {
             let block_next = self.get_block(x, window[1]);
             let block_prev = self.get_block(x, window[0]);
@@ -849,7 +863,6 @@ impl World {
         }
 
         let time = now.elapsed();
-        c_debug!(to_console, "tick took {:?}.", time);
         Ok(time)
     }
 }
