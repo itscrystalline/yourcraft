@@ -101,7 +101,7 @@ macro_rules! next_token {
 impl FromStr for Command {
     type Err = CommandError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut tokens = s.split(" ");
+        let mut tokens = s.trim().split(" ");
         match tokens
             .next()
             .ok_or(CommandError::InvalidCommand("".to_string()))?
@@ -551,7 +551,6 @@ pub async fn process_command(
             c_info!(to_console, "Commands: help/h/?, exit/stop, tps, mspt, players/p, kick (player_id), teleport/tp (player_id, x, y) block_at/get (x, y), set (x, y, Block), spawn (x), spawn_range (range)");
         }
         Command::Shutdown => {
-            world.shutdown(to_console, socket).await?;
             return Ok(true);
         }
         Command::Mspt => {

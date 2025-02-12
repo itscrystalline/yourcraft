@@ -273,19 +273,16 @@ impl World {
             *height += (multiplier * height_range).round() as u32;
         });
 
-        // TODO: remove when fuji fixes his shit
-        height_map[0] = 4;
-
         for (x, &height) in height_map.iter().enumerate() {
             if height != 0 {
                 for y in 0..height {
                     world.set_block(x as u32, y, Block::Stone)?;
                 }
             }
-            if height > terrain_settings.water_height {
+            if height >= terrain_settings.water_height {
                 world.set_block(x as u32, height, Block::Grass)?;
             } else {
-                for y in height..=terrain_settings.water_height {
+                for y in height..terrain_settings.water_height {
                     world.set_block(x as u32, y, Block::Water)?;
                 }
             }
@@ -575,13 +572,6 @@ impl World {
                 );
 
                 for player in self.players.iter() {
-                    encode_and_send!(
-                        to_console,
-                        PacketTypes::ServerPlayerLeave,
-                        to_broadcast.clone(),
-                        socket,
-                        player.addr
-                    );
                     if players_loading_chunk.contains(&player) {
                         encode_and_send!(
                             to_console,
@@ -591,6 +581,13 @@ impl World {
                             player.addr
                         );
                     }
+                    encode_and_send!(
+                        to_console,
+                        PacketTypes::ServerPlayerLeave,
+                        to_broadcast.clone(),
+                        socket,
+                        player.addr
+                    );
                 }
             }
         };

@@ -48,6 +48,9 @@ struct Settings {
     /// Disables sending heartbeat packets to connected clients.
     #[arg(long, default_value = "false")]
     no_heartbeat: bool,
+    /// The amount of network errors that are allowed to happen before the server exits.
+    #[arg(long, default_value = "3")]
+    max_network_errors: u8,
     /// The world type to generate.
     #[command(subcommand)]
     world_type: WorldType,
@@ -144,17 +147,26 @@ async fn main() -> io::Result<()> {
 
     let socket = UdpSocket::bind(format!("0.0.0.0:{}", settings.port)).await?;
     let mut buf = [0u8; 1024];
+    let mut network_error_strikes = 0u8;
     c_info!(to_console, "Listening on {}", socket.local_addr()?);
     loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
-                world.shutdown(to_console.clone(), &socket).await?;
-                let _ = to_console.send(console::ToConsoleType::Quit);
-                console_thread.await.unwrap();
                 break;
             }
-            packet = socket.recv_from(&mut buf) => {
-                network::incoming_packet_handler(to_console.clone(), &socket, &mut buf, &mut world, packet?).await?
+            packet_maybe = socket.recv_from(&mut buf) => {
+                // hopefully will fix windows bullshit
+                match packet_maybe {
+                    Ok(packet) => network::incoming_packet_handler(to_console.clone(), &socket, &mut buf, &mut world, packet).await?,
+                    Err(e) => {
+                        c_error!(to_console, "Encountered a network error while trying to recieve a packet: {}", e);
+                        network_error_strikes += 1;
+                        if network_error_strikes > settings.max_network_errors {
+                            c_error!(to_console, "max_network_errors reached! shutting down.");
+                            break;
+                        }
+                    }
+                }
             }
             _ = heartbeat_tick.tick() => {
                 if !settings.no_heartbeat {
@@ -211,14 +223,16 @@ async fn main() -> io::Result<()> {
             command_opt = from_console.recv() => {
                 if let Some(command) = command_opt {
                     if console::process_command(to_console.clone(), &socket, &mut world, command, tick_times_saved, last_tick_time).await? {
-                        let _ = to_console.send(console::ToConsoleType::Quit);
-                        console_thread.await.unwrap();
                         break;
                     }
                 }
             }
         }
     }
+
+    world.shutdown(to_console.clone(), &socket).await?;
+    let _ = to_console.send(console::ToConsoleType::Quit);
+    console_thread.await.unwrap();
 
     info!("Server shutdown complete after being up for {uptime:?}.");
     Ok(())
