@@ -12,7 +12,6 @@ use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::io;
 use std::iter::zip;
@@ -35,8 +34,6 @@ pub enum WorldError {
     //OutOfLoadedChunk,
     #[error("chunk is already loaded")]
     ChunkAlreadyLoaded,
-    #[error("terrain too detailed: 2^{0} passes for a world that is only {1} blocks wide")]
-    TerrainTooDetailed(u32, u32),
     #[error("invalid generation heights, requested to generate terrain from y 0 - {0} but world's size range is 0 - {1}")]
     InvalidGenerationRange(u32, u32),
     #[error("upper_height cannot be less than or equal to base_height")]
@@ -100,6 +97,15 @@ macro_rules! define_blocks {
     };
 }
 
+struct TerrainSettings {
+    base_height: u32,
+    upper_height: u32,
+    water_height: u32,
+    seed: Option<u64>,
+    noise_passes: usize,
+    redistribution_factor: f64,
+}
+
 impl World {
     pub fn generate(
         to_console: ToConsole,
@@ -134,12 +140,14 @@ impl World {
             } => World::generate_terrain(
                 to_console,
                 base,
-                base_height,
-                upper_height,
-                water_height,
-                seed,
-                noise_passes,
-                redistribution_factor,
+                TerrainSettings {
+                    base_height,
+                    upper_height,
+                    water_height,
+                    seed,
+                    noise_passes,
+                    redistribution_factor,
+                },
             )?,
         })
     }
@@ -219,30 +227,25 @@ impl World {
     fn generate_terrain(
         to_console: ToConsole,
         mut world: World,
-        base_height: u32,
-        upper_height: u32,
-        water_height: u32,
-        seed: Option<u64>,
-        noise_passes: usize,
-        redistribution_factor: f64,
+        terrain_settings: TerrainSettings,
     ) -> Result<World, WorldError> {
         let start = Instant::now();
 
-        if upper_height > world.height {
+        if terrain_settings.upper_height > world.height {
             return Err(WorldError::InvalidGenerationRange(
-                upper_height,
+                terrain_settings.upper_height,
                 world.height,
             ));
         }
-        if base_height >= upper_height {
+        if terrain_settings.base_height >= terrain_settings.upper_height {
             return Err(WorldError::GenerationTooThin);
         }
 
-        let master_seed = seed.unwrap_or(rand::rng().next_u64());
+        let master_seed = terrain_settings.seed.unwrap_or(rand::rng().next_u64());
         let mut seed_generator = SmallRng::seed_from_u64(master_seed);
-        let height_range = (upper_height - base_height) as f64;
+        let height_range = (terrain_settings.upper_height - terrain_settings.base_height) as f64;
 
-        let generators: Vec<(Perlin, f64, f64)> = (0..noise_passes)
+        let generators: Vec<(Perlin, f64, f64)> = (0..terrain_settings.noise_passes)
             .map(|pass| {
                 (
                     Perlin::new(seed_generator.next_u32()),
@@ -254,7 +257,7 @@ impl World {
 
         c_debug!(to_console, "generators: {:?}", generators);
 
-        let mut height_map: Vec<u32> = vec![base_height; world.width as usize];
+        let mut height_map: Vec<u32> = vec![terrain_settings.base_height; world.width as usize];
         height_map.iter_mut().enumerate().for_each(|(idx, height)| {
             let x = idx as f64 * 0.01;
             let mut multiplier = 0.0;
@@ -266,10 +269,11 @@ impl World {
                 amplitudes += scale;
             }
             multiplier /= amplitudes;
-            multiplier = multiplier.powf(redistribution_factor);
+            multiplier = multiplier.powf(terrain_settings.redistribution_factor);
             *height += (multiplier * height_range).round() as u32;
         });
 
+        // TODO: remove when fuji fixes his shit
         height_map[0] = 4;
 
         for (x, &height) in height_map.iter().enumerate() {
@@ -278,10 +282,10 @@ impl World {
                     world.set_block(x as u32, y, Block::Stone)?;
                 }
             }
-            if height > water_height {
+            if height > terrain_settings.water_height {
                 world.set_block(x as u32, height, Block::Grass)?;
             } else {
-                for y in height..=water_height {
+                for y in height..=terrain_settings.water_height {
                     world.set_block(x as u32, y, Block::Water)?;
                 }
             }
@@ -294,83 +298,6 @@ impl World {
             start.elapsed()
         );
         Ok(world)
-    }
-
-    fn interpolate(heights: &mut [u32], min_height: u32) {
-        if heights[0] == 0 {
-            heights[0] = min_height;
-        }
-        if heights[heights.len() - 1] == 0 {
-            heights[heights.len() - 1] = min_height;
-        }
-        let points_of_interest: Vec<(usize, u32)> = heights
-            .par_iter()
-            .enumerate()
-            .filter_map(|(idx, &height)| {
-                if height != 0 {
-                    Some((idx, height))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        points_of_interest.windows(2).for_each(|pair| {
-            let (start_idx, start_height) = pair[0];
-            let (end_idx, end_height) = pair[1];
-            (start_idx + 1..end_idx).for_each(|idx| {
-                let progress: f32 = { (idx - start_idx) as f32 / (end_idx - start_idx) as f32 };
-                let diff: f32 = end_height as f32 - start_height as f32;
-                heights[idx] = (start_height as i32 + (progress * diff).round() as i32) as u32;
-            });
-        });
-    }
-
-    fn smooth(heights: &mut [u32]) {
-        for center in 2..heights.len() - 2 {
-            heights[center] = Self::cubic_interpolate(
-                heights[center - 2],
-                heights[center - 1],
-                heights[center],
-                heights[center + 1],
-                heights[center + 2],
-            );
-        }
-    }
-
-    fn cubic_interpolate(p0: u32, p1: u32, center: u32, p2: u32, p3: u32) -> u32 {
-        let (fp0, fp1, center, fp2, fp3) =
-            (p0 as f32, p1 as f32, center as f32, p2 as f32, p3 as f32);
-        let a = (-fp0 + 3.0 * fp1 - 3.0 * fp2 + fp3) / 6.0;
-        let b = (fp0 - 2.0 * fp1 + fp2) / 2.0;
-        let c = (-fp0 + fp2) / 2.0;
-
-        (((a + b + c) + center) / 2.0).round() as u32 // Smooth the center height
-    }
-
-    fn midpoint_displacement(
-        heights: &mut Vec<u32>,
-        left: usize,
-        right: usize,
-        min_height: u32,
-        max_height: u32,
-        passes_left: u32,
-    ) {
-        if right - left < 2 || passes_left == 0 {
-            return;
-        }
-
-        let mid = (left + right - 1) / 2;
-        let mut rng = rand::rng();
-
-        heights[mid] = match heights[left].cmp(&heights[right]) {
-            Ordering::Equal => rng.random_range(min_height..max_height),
-            Ordering::Less => rng.random_range(heights[left]..heights[right]),
-            Ordering::Greater => rng.random_range(heights[right]..heights[left]),
-        };
-
-        // Recurse for both halves with reduced roughness
-        Self::midpoint_displacement(heights, left, mid, min_height, max_height, passes_left - 1);
-        Self::midpoint_displacement(heights, mid, right, min_height, max_height, passes_left - 1);
     }
 
     fn check_out_of_bounds_chunk(&self, chunk_x: u32, chunk_y: u32) -> Result<(), WorldError> {

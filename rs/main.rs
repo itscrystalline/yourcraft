@@ -63,6 +63,7 @@ pub enum WorldType {
         #[arg(short, long, default_value = "4")]
         grass_height: u32,
     },
+    /// Perlin noise based terrain.
     Terrain {
         /// The minimum height terrain can generate.
         #[arg(short, long, default_value = "4")]

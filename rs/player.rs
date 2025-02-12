@@ -1,5 +1,4 @@
 use crate::{
-    console::ToConsole,
     constants,
     world::{is_solid, BlockPos, World, WorldError},
 };
