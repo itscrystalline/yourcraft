@@ -129,13 +129,17 @@ impl World {
                 upper_height,
                 seed,
                 noise_passes,
+                redistribution_factor,
+                water_height,
             } => World::generate_terrain(
                 to_console,
                 base,
                 base_height,
                 upper_height,
+                water_height,
                 seed,
                 noise_passes,
+                redistribution_factor,
             )?,
         })
     }
@@ -217,8 +221,10 @@ impl World {
         mut world: World,
         base_height: u32,
         upper_height: u32,
+        water_height: u32,
         seed: Option<u64>,
         noise_passes: usize,
+        redistribution_factor: f64,
     ) -> Result<World, WorldError> {
         let start = Instant::now();
 
@@ -240,8 +246,8 @@ impl World {
             .map(|pass| {
                 (
                     Perlin::new(seed_generator.next_u32()),
-                    (height_range / ((pass as f64 * 2.0) + 1.0)),
-                    10f64.powf(-((noise_passes - pass) as f64)),
+                    1f64 / (2f64.powi(pass as i32)),
+                    2f64.powi(pass as i32),
                 )
             })
             .collect();
@@ -249,13 +255,20 @@ impl World {
         c_debug!(to_console, "generators: {:?}", generators);
 
         let mut height_map: Vec<u32> = vec![base_height; world.width as usize];
-        for (generator, range, freq) in generators {
-            height_map.iter_mut().enumerate().for_each(|(idx, height)| {
-                let x = idx as f64;
-                let noise_get = generator.get([x * freq]) * range;
-                *height += noise_get.round() as u32;
-            });
-        }
+        height_map.iter_mut().enumerate().for_each(|(idx, height)| {
+            let x = idx as f64 * 0.01;
+            let mut multiplier = 0.0;
+            let mut amplitudes = 0.0;
+            for (generator, scale, freq) in &generators {
+                let generated = (generator.get([x * freq]) / 2.0) + 0.5;
+                // from [-1, 1] to [0, 1]
+                multiplier += scale * generated;
+                amplitudes += scale;
+            }
+            multiplier /= amplitudes;
+            multiplier = multiplier.powf(redistribution_factor);
+            *height += (multiplier * height_range).round() as u32;
+        });
 
         height_map[0] = 4;
 
@@ -265,7 +278,13 @@ impl World {
                     world.set_block(x as u32, y, Block::Stone)?;
                 }
             }
-            world.set_block(x as u32, height, Block::Grass)?;
+            if height > water_height {
+                world.set_block(x as u32, height, Block::Grass)?;
+            } else {
+                for y in height..=water_height {
+                    world.set_block(x as u32, y, Block::Water)?;
+                }
+            }
         }
 
         c_info!(

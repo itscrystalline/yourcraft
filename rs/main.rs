@@ -20,44 +20,69 @@ mod world;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about)]
 struct Settings {
+    /// The port to use for clients to connect to.
     #[arg(short, long, default_value = "8475")]
     port: u16,
+    /// The world's horizontal size.
     #[arg(long, default_value = "1024")]
     world_width: NonZeroU32,
+    /// The world's vertical size.
     #[arg(long, default_value = "256")]
     world_height: NonZeroU32,
+    /// The size of each chunk the world subdivides into.
     #[arg(short, long, default_value = "16")]
     chunk_size: NonZeroU32,
+    /// The x coordinate of the center of spawn point. Defaults to the center of the world. (e.g.
+    /// world_width / 2)
     #[arg(long)]
     spawn_point: Option<u32>,
+    /// The spawn range that players will spawn around spawn_point.
     #[arg(long, default_value = "16")]
     spawn_range: NonZeroU32,
+    /// Disables the command console.
     #[arg(short, long, default_value = "false")]
     no_console: bool,
+    /// Enables Debug Logging.
     #[arg(long, default_value = "false")]
     debug: bool,
+    /// Disables sending heartbeat packets to connected clients.
     #[arg(long, default_value = "false")]
     no_heartbeat: bool,
+    /// The world type to generate.
     #[command(subcommand)]
     world_type: WorldType,
 }
 
 #[derive(Subcommand, Debug)]
 pub enum WorldType {
+    /// An empty world with nothing in it.
     Empty,
+    /// A flat grass world.
     Flat {
+        /// The height the grass layer generates at.
         #[arg(short, long, default_value = "4")]
         grass_height: u32,
     },
     Terrain {
+        /// The minimum height terrain can generate.
         #[arg(short, long, default_value = "4")]
         base_height: u32,
-        #[arg(short, long, default_value = "128")]
+        /// The maximum height terrain can generate.
+        #[arg(short, long, default_value = "192")]
         upper_height: u32,
+        /// The height water generates up to.
+        #[arg(short, long, default_value = "32")]
+        water_height: u32,
+        /// The seed for the world generator, Defaults to a randomly selected u64.
         #[arg(short, long)]
         seed: Option<u64>,
+        /// How many Perlin noise generators should be created.
         #[arg(short, long, default_value = "5")]
         noise_passes: usize,
+        /// The power to raise the final noise value with. Higher means more flatlands and steeper
+        /// mountains, less means mose hills and less flatland.
+        #[arg(short, long, default_value = "3.0")]
+        redistribution_factor: f64,
     },
 }
 
