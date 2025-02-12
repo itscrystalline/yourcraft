@@ -22,15 +22,21 @@ KOSEN-KMITL Programming 4 Final Project - A 2d sandbox game server.
 Usage: yourcraft-server [OPTIONS] <COMMAND>
 
 Commands:
-  empty  
-  flat   [-g, --grass-height [default: 4]]
-  help   Print this message or the help of the given subcommand(s)
+  empty    An empty world with nothing in it
+  flat     A flat grass world
+  terrain  Perlin noise based terrain
+  help     Print this message or the help of the given subcommand(s)
 
 Options:
-  -p, --port <PORT>                  [default: 8475]
-      --world-width <WORLD_WIDTH>    [default: 1024]
-      --world-height <WORLD_HEIGHT>  [default: 256]
-  -c, --chunk-size <CHUNK_SIZE>      [default: 16]
+  -p, --port <PORT>                  The port to use for clients to connect to [default: 8475]
+      --world-width <WORLD_WIDTH>    The world's horizontal size [default: 1024]
+      --world-height <WORLD_HEIGHT>  The world's vertical size [default: 256]
+  -c, --chunk-size <CHUNK_SIZE>      The size of each chunk the world subdivides into [default: 16]
+      --spawn-point <SPAWN_POINT>    The x coordinate of the center of spawn point. Defaults to the center of the world. (e.g. world_width / 2)
+      --spawn-range <SPAWN_RANGE>    The spawn range that players will spawn around spawn_point [default: 16]
+  -n, --no-console                   Disables the command console
+      --debug                        Enables Debug Logging
+      --no-heartbeat                 Disables sending heartbeat packets to connected clients
   -h, --help                         Print help
   -V, --version                      Print version
 ```
@@ -102,7 +108,7 @@ kicked from the server.
 🟨⬛ 13: [C2S] ClientPlayerMoveX (pos_x: float)                                                                                 
 🟨⬛ 14: [C2S] ClientPlayerJump ()                                                                                              
 ✅✅ 15: [S2C] ServerPlayerUpdatePos (player_id: int, pos_x: float, pos_y: float)                                               
-✅⬛ 16: [S2C] ServerKick (msg: str)                                                                                            
+✅✅ 16: [S2C] ServerKick (msg: str)                                                                                            
 ✅✅ 17: [S2C] ServerHeartbeat                                                                                                  
 ✅✅ 18: [C2S] ClientHeartbeat                                                                                                  
 ```
