@@ -7,7 +7,7 @@ use crate::network::{Packet, ServerPlayerLeave, ServerPlayerLeaveLoaded};
 use crate::player::Player;
 use crate::{c_debug, c_error, c_info, WorldType};
 use get_size::GetSize;
-use noise::{NoiseFn, Perlin};
+use noise::{Add, NoiseFn, Perlin};
 use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
 use rayon::prelude::*;
@@ -16,7 +16,7 @@ use std::collections::HashSet;
 use std::io;
 use std::iter::zip;
 use std::num::NonZeroU32;
-use std::ops::Range;
+use std::ops::{AddAssign, Neg, Range, RangeInclusive};
 use std::time::{Duration, Instant};
 use strum::EnumString;
 use thiserror::Error;
@@ -97,6 +97,7 @@ macro_rules! define_blocks {
     };
 }
 
+#[derive(Debug)]
 struct TerrainSettings {
     base_height: u32,
     upper_height: u32,
@@ -104,6 +105,53 @@ struct TerrainSettings {
     seed: Option<u64>,
     noise_passes: usize,
     redistribution_factor: f64,
+    cave_gen_chance: f64,
+    cave_gen_steps: u8,
+    cave_gen_min_width: u8,
+    cave_gen_max_width: u8,
+    cave_gen_max_turn_angle: u16,
+}
+
+#[derive(Default, Debug)]
+struct AngleDeg(f64);
+
+impl AddAssign for AngleDeg {
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 += rhs.0;
+        self.0 %= 360.0;
+    }
+}
+impl Neg for AngleDeg {
+    type Output = Self;
+    fn neg(self) -> Self::Output {
+        Self(360.0 - self.0)
+    }
+}
+impl From<f64> for AngleDeg {
+    fn from(value: f64) -> Self {
+        let mut value = value;
+        if !(-360.0..360.0).contains(&value) {
+            value %= 360.0;
+        }
+        if value < 0.0 {
+            value += 360.0;
+        }
+        Self(value)
+    }
+}
+impl From<AngleDeg> for f64 {
+    fn from(value: AngleDeg) -> Self {
+        value.0
+    }
+}
+impl PartialEq for AngleDeg {
+    fn eq(&self, other: &Self) -> bool {
+        if (self.0 == 0.0 && other.0 == 360.0) || (self.0 == 360.0 && other.0 == 0.0) {
+            true
+        } else {
+            self.0 == other.0
+        }
+    }
 }
 
 impl World {
@@ -137,6 +185,11 @@ impl World {
                 noise_passes,
                 redistribution_factor,
                 water_height,
+                cave_gen_chance_percent,
+                cave_gen_steps,
+                cave_gen_min_width,
+                cave_gen_max_width,
+                cave_gen_max_turn_angle,
             } => World::generate_terrain(
                 to_console,
                 base,
@@ -147,6 +200,11 @@ impl World {
                     seed,
                     noise_passes,
                     redistribution_factor,
+                    cave_gen_chance: (cave_gen_chance_percent as f64) / 100.0,
+                    cave_gen_steps,
+                    cave_gen_min_width,
+                    cave_gen_max_width,
+                    cave_gen_max_turn_angle,
                 },
             )?,
         })
@@ -254,28 +312,42 @@ impl World {
                 )
             })
             .collect();
+        let cave_generator = (Perlin::new(seed_generator.next_u32()), 32.0);
 
         c_debug!(to_console, "generators: {:?}", generators);
+        c_debug!(to_console, "cave generator: {:?}", cave_generator);
 
-        let mut height_map: Vec<u32> = vec![terrain_settings.base_height; world.width as usize];
+        let mut height_map = vec![terrain_settings.base_height; world.width as usize];
         height_map.iter_mut().enumerate().for_each(|(idx, height)| {
             let x = idx as f64 * 0.01;
             let mut multiplier = 0.0;
-            let mut amplitudes = 0.0;
-            for (generator, scale, freq) in &generators {
+            let mut octaves = 0.0;
+            for (generator, octave, freq) in &generators {
                 let generated = (generator.get([x * freq]) / 2.0) + 0.5;
                 // from [-1, 1] to [0, 1]
-                multiplier += scale * generated;
-                amplitudes += scale;
+                multiplier += octave * generated;
+                octaves += octave;
             }
-            multiplier /= amplitudes;
+            multiplier /= octaves;
             multiplier = multiplier.powf(terrain_settings.redistribution_factor);
             *height += (multiplier * height_range).round() as u32;
         });
 
+        let mut cave_origins: Vec<(u32, u32)> = vec![];
+
+        let (cave, freq) = cave_generator;
         for (x, &height) in height_map.iter().enumerate() {
             if height != 0 {
                 for y in 0..height {
+                    //let block = {
+                    //    let (x_f, y_f) = (x as f64 * 0.01, y as f64 * 0.01);
+                    //    let (cave, freq) = cave_generator;
+                    //    if cave.get([x_f * freq, y_f * freq]) > 0.9 {
+                    //        Block::Air
+                    //    } else {
+                    //        Block::Stone
+                    //    }
+                    //};
                     world.set_block(x as u32, y, Block::Stone)?;
                 }
             }
@@ -286,6 +358,47 @@ impl World {
                     world.set_block(x as u32, y, Block::Water)?;
                 }
             }
+
+            // should a cave spawn in this slice
+            let cave_perlin_here =
+                cave.get([x as f64 * 0.01 * freq, height as f64 * 0.01 * freq]) / 2.0 + 0.5;
+            if cave_perlin_here < terrain_settings.cave_gen_chance {
+                let y = cave_perlin_here * (1.0 / terrain_settings.cave_gen_chance) * height as f64;
+                cave_origins.push((x as u32, y.round() as u32));
+            }
+        }
+
+        let mut to_carve: HashSet<(u32, u32)> = HashSet::new();
+        let turn_angle = terrain_settings.cave_gen_max_turn_angle as f64 / 2.0;
+        for (x_start, y_start) in cave_origins.into_iter() {
+            // grow the cave
+            let (mut current_x, mut current_y) = (x_start, y_start);
+            let mut angle = AngleDeg::default();
+
+            c_debug!(to_console, "generating cave at ({}, {})", x_start, y_start);
+
+            for _ in 0..=terrain_settings.cave_gen_steps {
+                let perlin_here = cave.get([
+                    current_x as f64 * 0.01 * freq,
+                    current_y as f64 * 0.01 * freq,
+                ]);
+
+                let range_here = terrain_settings.cave_gen_min_width
+                    + ((perlin_here / 2.0 + 0.5)
+                        * (terrain_settings.cave_gen_max_width
+                            - terrain_settings.cave_gen_min_width) as f64)
+                        as u8;
+                let points = Self::points_surrounding(current_x, current_y, range_here);
+                to_carve.extend(&points);
+
+                // pick next point
+                angle += AngleDeg::from(perlin_here * turn_angle);
+                (current_x, current_y) = Self::move_by_angle(current_x, current_y, &angle);
+            }
+        }
+
+        for (x, y) in to_carve {
+            let _ = world.set_block(x, y, Block::Air);
         }
 
         c_info!(
@@ -295,6 +408,38 @@ impl World {
             start.elapsed()
         );
         Ok(world)
+    }
+
+    fn points_surrounding(x: u32, y: u32, radius: u8) -> Vec<(u32, u32)> {
+        let mut points: Vec<(u32, u32)> = vec![];
+        let radius_squared: i32 = (radius as i32).pow(2);
+        (x.saturating_sub(radius.into())..=x.saturating_add(radius.into())).for_each(|check_x| {
+            (y.saturating_sub(radius.into())..=y.saturating_add(radius.into())).for_each(
+                |check_y| {
+                    let (diff_x, diff_y) = (x as i32 - check_x as i32, y as i32 - check_y as i32);
+                    if diff_x.pow(2) + diff_y.pow(2) <= radius_squared {
+                        points.push((check_x, check_y));
+                    }
+                },
+            );
+        });
+        points
+    }
+
+    fn move_by_angle(mut x: u32, mut y: u32, angle: &AngleDeg) -> (u32, u32) {
+        if (22.5..157.5).contains(&angle.0) {
+            x = x.saturating_add(1);
+        } else if (202.5..337.5).contains(&angle.0) {
+            x = x.saturating_sub(1);
+        }
+
+        if (112.5..247.5).contains(&angle.0) {
+            y = y.saturating_sub(1);
+        } else if (0.0..67.5).contains(&angle.0) || (292.5..360.0).contains(&angle.0) {
+            y = y.saturating_add(1);
+        }
+
+        (x, y)
     }
 
     fn check_out_of_bounds_chunk(&self, chunk_x: u32, chunk_y: u32) -> Result<(), WorldError> {

@@ -69,13 +69,13 @@ pub enum WorldType {
     /// Perlin noise based terrain.
     Terrain {
         /// The minimum height terrain can generate.
-        #[arg(short, long, default_value = "4")]
+        #[arg(short, long, default_value = "48")]
         base_height: u32,
         /// The maximum height terrain can generate.
         #[arg(short, long, default_value = "192")]
         upper_height: u32,
         /// The height water generates up to.
-        #[arg(short, long, default_value = "32")]
+        #[arg(short, long, default_value = "64")]
         water_height: u32,
         /// The seed for the world generator, Defaults to a randomly selected u64.
         #[arg(short, long)]
@@ -87,6 +87,21 @@ pub enum WorldType {
         /// mountains, less means mose hills and less flatland.
         #[arg(short, long, default_value = "3.0")]
         redistribution_factor: f64,
+        /// The chance for a cave to generate in each world "slice", in percent.
+        #[arg(long, default_value = "10", value_parser = clap::value_parser!(u32).range(0..=100))]
+        cave_gen_chance_percent: u32,
+        /// How many segments each cave will have.
+        #[arg(long, default_value = "72")]
+        cave_gen_steps: u8,
+        /// Lower bound for cave size.
+        #[arg(long, default_value = "1")]
+        cave_gen_min_width: u8,
+        /// Upper bound for cave size.
+        #[arg(long, default_value = "3")]
+        cave_gen_max_width: u8,
+        /// Max turn angle for each step of the cave in degrees.
+        #[arg(long, default_value = "60", value_parser = clap::value_parser!(u16).range(0..=360))]
+        cave_gen_max_turn_angle: u16,
     },
 }
 

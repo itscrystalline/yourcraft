@@ -4,13 +4,13 @@
         {
             "type": "codelldb",
             "request": "launch",
-            "name": "Debug Server (flat)",
+            "name": "Debug Server (No Water)",
             "cargo": {
                 "args": [
                     "build"
                 ]
             },
-            "args": ["flat"],
+            "args": ["terrain", "-w", "0"],
             "program": "target/debug/yourcraft-server",
             "cwd": "${workspaceFolder}",
             "preLaunchTask": "Rust: Build"
