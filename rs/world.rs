@@ -7,7 +7,7 @@ use crate::network::{Packet, ServerPlayerLeave, ServerPlayerLeaveLoaded};
 use crate::player::Player;
 use crate::{c_debug, c_error, c_info, WorldType};
 use get_size::GetSize;
-use noise::{Add, NoiseFn, Perlin};
+use noise::{NoiseFn, Perlin};
 use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
 use rayon::prelude::*;
@@ -16,7 +16,7 @@ use std::collections::HashSet;
 use std::io;
 use std::iter::zip;
 use std::num::NonZeroU32;
-use std::ops::{AddAssign, Neg, Range, RangeInclusive};
+use std::ops::{AddAssign, Neg, Range};
 use std::time::{Duration, Instant};
 use strum::EnumString;
 use thiserror::Error;
@@ -333,21 +333,12 @@ impl World {
             *height += (multiplier * height_range).round() as u32;
         });
 
-        let mut cave_origins: Vec<(u32, u32)> = vec![];
+        let mut cave_origins: Vec<(u32, u32, AngleDeg)> = vec![];
 
         let (cave, freq) = cave_generator;
         for (x, &height) in height_map.iter().enumerate() {
             if height != 0 {
                 for y in 0..height {
-                    //let block = {
-                    //    let (x_f, y_f) = (x as f64 * 0.01, y as f64 * 0.01);
-                    //    let (cave, freq) = cave_generator;
-                    //    if cave.get([x_f * freq, y_f * freq]) > 0.9 {
-                    //        Block::Air
-                    //    } else {
-                    //        Block::Stone
-                    //    }
-                    //};
                     world.set_block(x as u32, y, Block::Stone)?;
                 }
             }
@@ -364,16 +355,22 @@ impl World {
                 cave.get([x as f64 * 0.01 * freq, height as f64 * 0.01 * freq]) / 2.0 + 0.5;
             if cave_perlin_here < terrain_settings.cave_gen_chance {
                 let y = cave_perlin_here * (1.0 / terrain_settings.cave_gen_chance) * height as f64;
-                cave_origins.push((x as u32, y.round() as u32));
+                cave_origins.push((
+                    x as u32,
+                    y.round() as u32,
+                    AngleDeg::from(
+                        cave_perlin_here * 360.0 * (1.0 / terrain_settings.cave_gen_chance),
+                    ),
+                ));
             }
         }
 
         let mut to_carve: HashSet<(u32, u32)> = HashSet::new();
         let turn_angle = terrain_settings.cave_gen_max_turn_angle as f64 / 2.0;
-        for (x_start, y_start) in cave_origins.into_iter() {
+        for (x_start, y_start, init_angle) in cave_origins.into_iter() {
             // grow the cave
             let (mut current_x, mut current_y) = (x_start, y_start);
-            let mut angle = AngleDeg::default();
+            let mut angle = init_angle;
 
             c_debug!(to_console, "generating cave at ({}, {})", x_start, y_start);
 
