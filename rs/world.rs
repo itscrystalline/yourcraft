@@ -380,13 +380,19 @@ impl World {
                     current_y as f64 * 0.01 * freq,
                 ]);
 
-                let range_here = terrain_settings.cave_gen_min_width
-                    + ((perlin_here / 2.0 + 0.5)
-                        * (terrain_settings.cave_gen_max_width
-                            - terrain_settings.cave_gen_min_width) as f64)
-                        as u8;
-                let points = Self::points_surrounding(current_x, current_y, range_here);
-                to_carve.extend(&points);
+                if let Ok(block) = world.get_block(current_x, current_y) {
+                    if is_solid(block) {
+                        let range_here = terrain_settings.cave_gen_min_width
+                            + ((perlin_here / 2.0 + 0.5)
+                                * (terrain_settings.cave_gen_max_width
+                                    - terrain_settings.cave_gen_min_width)
+                                    as f64) as u8;
+                        let points = Self::points_surrounding(current_x, current_y, range_here);
+                        to_carve.extend(&points);
+                    } else {
+                        break;
+                    }
+                }
 
                 // pick next point
                 angle += AngleDeg::from(perlin_here * turn_angle);

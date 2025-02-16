@@ -122,7 +122,7 @@ async fn main() -> io::Result<()> {
     let (console_thread, mut from_console, to_console) =
         console::init(!settings.no_console, settings.debug);
 
-    c_info!(to_console, "Starting up with {:?}", settings);
+    c_debug!(to_console, "Starting up with {:?}", settings);
 
     let mut world_tick = time::interval(Duration::from_millis(1000 / constants::TICKS_PER_SECOND));
     let mut heartbeat_tick =
