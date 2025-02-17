@@ -7,9 +7,10 @@ use crate::network::{Packet, ServerPlayerLeave, ServerPlayerLeaveLoaded};
 use crate::player::Player;
 use crate::{c_debug, c_error, c_info, WorldType};
 use get_size::GetSize;
-use noise::{NoiseFn, OpenSimplex};
+use noise::{NoiseFn, OpenSimplex, Perlin};
 use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
+use ratatui::symbols::block;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -292,10 +293,10 @@ impl World {
         let mut seed_generator = SmallRng::seed_from_u64(master_seed);
         let height_range = (terrain_settings.upper_height - terrain_settings.base_height) as f64;
 
-        let generators: Vec<(OpenSimplex, f64, f64)> = (0..terrain_settings.noise_passes)
+        let generators: Vec<(Perlin, f64, f64)> = (0..terrain_settings.noise_passes)
             .map(|pass| {
                 (
-                    OpenSimplex::new(seed_generator.next_u32()),
+                    Perlin::new(seed_generator.next_u32()),
                     1f64 / (2f64.powi(pass as i32)),
                     2f64.powi(pass as i32),
                 )
@@ -308,7 +309,7 @@ impl World {
 
         let mut height_map = vec![terrain_settings.base_height; world.width as usize];
         height_map.iter_mut().enumerate().for_each(|(idx, height)| {
-            let x = idx as f64 * 0.01;
+            let x = idx as f64 * 0.005;
             let mut multiplier = 0.0;
             let mut octaves = 0.0;
             for (generator, octave, freq) in &generators {
@@ -328,7 +329,7 @@ impl World {
                 for y in 0..height {
                     let block = {
                         let noise_here = cave
-                            .get([x as f64 * 0.01 * freq, y as f64 * 0.01 * freq])
+                            .get([x as f64 * 0.001 * freq, y as f64 * 0.001 * freq])
                             .abs();
                         if noise_here < cave_gen_size {
                             Block::Air
@@ -339,12 +340,22 @@ impl World {
                     world.set_block(x as u32, y, block)?;
                 }
             }
-            if height >= terrain_settings.water_height {
-                world.set_block(x as u32, height, Block::Grass)?;
-            } else {
+            if height < terrain_settings.water_height {
                 for y in height..terrain_settings.water_height {
                     world.set_block(x as u32, y, Block::Water)?;
                 }
+            }
+        }
+
+        for x in 0..world.width {
+            let (_, top_block_y) = world.get_highest_block_at(x)?;
+            let above_top_block = world.get_block(x, top_block_y + 1)?;
+            let below_top_block = world.get_block(x, top_block_y.saturating_sub(1))?;
+            if below_top_block == Block::Air {
+                world.set_block(x, top_block_y, Block::Air)?;
+            } else if above_top_block != Block::Water && top_block_y > terrain_settings.water_height
+            {
+                world.set_block(x, top_block_y, Block::Grass)?;
             }
         }
 

@@ -69,10 +69,10 @@ pub enum WorldType {
     /// Perlin noise based terrain.
     Terrain {
         /// The minimum height terrain can generate.
-        #[arg(short, long, default_value = "48")]
+        #[arg(short, long, default_value = "24")]
         base_height: u32,
         /// The maximum height terrain can generate.
-        #[arg(short, long, default_value = "192")]
+        #[arg(short, long, default_value = "216")]
         upper_height: u32,
         /// The height water generates up to.
         #[arg(short, long, default_value = "64")]
@@ -85,11 +85,11 @@ pub enum WorldType {
         noise_passes: usize,
         /// The power to raise the final noise value with. Higher means more flatlands and steeper
         /// mountains, less means mose hills and less flatland.
-        #[arg(short, long, default_value = "3.0")]
+        #[arg(short, long, default_value = "2.0")]
         redistribution_factor: f64,
         /// The threshold of the noise value to be considered as a cave from 0 - 1, any value > 1
         /// will be treated as 1.
-        #[arg(long, default_value = "0.1")]
+        #[arg(long, default_value = "0.075")]
         cave_gen_size: f64,
     },
 }
