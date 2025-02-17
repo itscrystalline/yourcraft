@@ -7,7 +7,7 @@ use crate::network::{Packet, ServerPlayerLeave, ServerPlayerLeaveLoaded};
 use crate::player::Player;
 use crate::{c_debug, c_error, c_info, WorldType};
 use get_size::GetSize;
-use noise::{NoiseFn, Perlin};
+use noise::{NoiseFn, OpenSimplex};
 use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
 use rayon::prelude::*;
@@ -303,16 +303,16 @@ impl World {
         let mut seed_generator = SmallRng::seed_from_u64(master_seed);
         let height_range = (terrain_settings.upper_height - terrain_settings.base_height) as f64;
 
-        let generators: Vec<(Perlin, f64, f64)> = (0..terrain_settings.noise_passes)
+        let generators: Vec<(OpenSimplex, f64, f64)> = (0..terrain_settings.noise_passes)
             .map(|pass| {
                 (
-                    Perlin::new(seed_generator.next_u32()),
+                    OpenSimplex::new(seed_generator.next_u32()),
                     1f64 / (2f64.powi(pass as i32)),
                     2f64.powi(pass as i32),
                 )
             })
             .collect();
-        let cave_generator = (Perlin::new(seed_generator.next_u32()), 32.0);
+        let cave_generator = (OpenSimplex::new(seed_generator.next_u32()), 32.0);
 
         c_debug!(to_console, "generators: {:?}", generators);
         c_debug!(to_console, "cave generator: {:?}", cave_generator);
@@ -323,7 +323,7 @@ impl World {
             let mut multiplier = 0.0;
             let mut octaves = 0.0;
             for (generator, octave, freq) in &generators {
-                let generated = (generator.get([x * freq]) / 2.0) + 0.5;
+                let generated = (generator.get([x * freq, *height as f64]) / 2.0) + 0.5;
                 // from [-1, 1] to [0, 1]
                 multiplier += octave * generated;
                 octaves += octave;
