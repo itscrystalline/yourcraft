@@ -10,7 +10,6 @@ use get_size::GetSize;
 use noise::{NoiseFn, OpenSimplex, Perlin};
 use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
-use ratatui::symbols::block;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -307,55 +306,42 @@ impl World {
         c_debug!(to_console, "generators: {:?}", generators);
         c_debug!(to_console, "cave generator: {:?}", cave_generator);
 
-        let mut height_map = vec![terrain_settings.base_height; world.width as usize];
-        height_map.iter_mut().enumerate().for_each(|(idx, height)| {
-            let x = idx as f64 * 0.005;
+        let (cave, freq) = cave_generator;
+        for x in 0..world.width {
+            let x_f = x as f64 * 0.005;
             let mut multiplier = 0.0;
             let mut octaves = 0.0;
             for (generator, octave, freq) in &generators {
-                let generated = (generator.get([x * freq, *height as f64]) / 2.0) + 0.5;
+                let generated = (generator.get([x_f * freq]) / 2.0) + 0.5;
                 // from [-1, 1] to [0, 1]
                 multiplier += octave * generated;
                 octaves += octave;
             }
             multiplier /= octaves;
             multiplier = multiplier.powf(terrain_settings.redistribution_factor);
-            *height += (multiplier * height_range).round() as u32;
-        });
+            let height = terrain_settings.base_height + (multiplier * height_range).round() as u32;
 
-        let (cave, freq) = cave_generator;
-        for (x, &height) in height_map.iter().enumerate() {
-            if height != 0 {
-                for y in 0..height {
-                    let block = {
-                        let noise_here = cave
-                            .get([x as f64 * 0.001 * freq, y as f64 * 0.001 * freq])
-                            .abs();
-                        if noise_here < cave_gen_size {
-                            Block::Air
-                        } else {
-                            Block::Stone
-                        }
-                    };
-                    world.set_block(x as u32, y, block)?;
+            let mut top_y = 0u32;
+            for y in 0..=u32::max(height, terrain_settings.water_height) {
+                let block = {
+                    let noise_here = cave
+                        .get([x as f64 * 0.001 * freq, y as f64 * 0.001 * freq])
+                        .abs();
+                    if noise_here < cave_gen_size {
+                        Block::Air
+                    } else {
+                        top_y = y;
+                        Block::Stone
+                    }
+                };
+                world.set_block(x, y, block)?;
+
+                if y > height {
+                    world.set_block(x, y, Block::Water)?;
                 }
             }
-            if height < terrain_settings.water_height {
-                for y in height..terrain_settings.water_height {
-                    world.set_block(x as u32, y, Block::Water)?;
-                }
-            }
-        }
-
-        for x in 0..world.width {
-            let (_, top_block_y) = world.get_highest_block_at(x)?;
-            let above_top_block = world.get_block(x, top_block_y + 1)?;
-            let below_top_block = world.get_block(x, top_block_y.saturating_sub(1))?;
-            if below_top_block == Block::Air {
-                world.set_block(x, top_block_y, Block::Air)?;
-            } else if above_top_block != Block::Water && top_block_y > terrain_settings.water_height
-            {
-                world.set_block(x, top_block_y, Block::Grass)?;
+            if top_y > terrain_settings.water_height {
+                world.set_block(x, top_y, Block::Grass)?;
             }
         }
 
