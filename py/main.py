@@ -105,7 +105,11 @@ def draw_world(chunkCoord):
                         loadChunk[0] * 160 - blockPos[0] + WorldPosition.x + 145 + screen_width / 2,
                         -loadChunk[1] * 160 + blockPos[1] - WorldPosition.y - 150 + screen_height / 2
                     )
-                    pygame.draw.rect(screen, BlockType[blockType], (blockScreenPos[0], blockScreenPos[1], 10, 10))
+                    block_images = [pygame.image.load(f"C:\Users\userm\Downloads\grassblock.png")]
+                    screen.blit(block_images[blockType], (blockScreenPos[0], blockScreenPos[1]))
+
+
+
             else:
                 if (loadChunkX < 0) or (loadChunkY < 0):
                     continue
