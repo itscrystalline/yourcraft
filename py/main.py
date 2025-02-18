@@ -105,7 +105,7 @@ def draw_world(chunkCoord):
                         loadChunk[0] * 160 - blockPos[0] + WorldPosition.x + 145 + screen_width / 2,
                         -loadChunk[1] * 160 + blockPos[1] - WorldPosition.y - 150 + screen_height / 2
                     )
-                    block_images = [pygame.image.load(f"C:\Users\userm\Downloads\grassblock.png")]
+                    block_images = [pygame.image.load("C:/Users/userm/Downloads/grassblock.png")]
                     screen.blit(block_images[blockType], (blockScreenPos[0], blockScreenPos[1]))
 
 
