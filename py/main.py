@@ -11,9 +11,10 @@ import threading
 pygame.init()
 
 # Set up the display
-screen_width = 800
-screen_height = 600
-screen = pygame.display.set_mode((screen_width, screen_height), pygame.SRCALPHA | pygame.HWSURFACE | pygame.DOUBLEBUF)
+screen_size = pygame.display.get_desktop_sizes()[0]
+screen_width = screen_size[0]
+screen_height = screen_size[1]
+screen = pygame.display.set_mode((screen_width, screen_height), pygame.SRCALPHA | pygame.HWSURFACE | pygame.DOUBLEBUF | pygame.RESIZABLE)
 pygame.display.set_caption("Pygame Initialization Example")
 
 # Clock
@@ -95,8 +96,8 @@ def draw_world(chunkCoord):
     dChunkX = math.ceil(screen_width / 320)
     dChunkY = math.ceil(screen_height / 320)
 
-    for loadChunkX in range(chunkCoord[0] - dChunkX, chunkCoord[0] + dChunkX + 2):
-        for loadChunkY in range(chunkCoord[1] - dChunkY - 1, chunkCoord[1] + dChunkY + 3):
+    for loadChunkX in range(chunkCoord[0] - dChunkX, chunkCoord[0] + dChunkX + 1):
+        for loadChunkY in range(chunkCoord[1] - dChunkY, chunkCoord[1] + dChunkY + 1):
             loadChunk = (loadChunkX, loadChunkY)
             if loadChunk in World:
                 for blockPos, blockType in World[loadChunk].items():
@@ -112,7 +113,7 @@ def draw_world(chunkCoord):
                 cliNet.send(network.ClientRequestChunk(loadChunk[0], loadChunk[1]))
 # Game loop
 def main():
-    global running
+    global running, screen_size, screen_width, screen_height
     while running:
         dt = clock.tick(50) / 1000  # Calculate time per frame
         for event in pygame.event.get():
@@ -120,6 +121,10 @@ def main():
                 cliNet.send(network.Goodbye())
                 pygame.quit()
                 running = False
+            elif event.type == pygame.VIDEORESIZE:
+                screen_size = screen.get_size()
+                screen_width = screen_size[0]
+                screen_height = screen_size[1]
 
         # Update movement / controls
         movement_update = False
