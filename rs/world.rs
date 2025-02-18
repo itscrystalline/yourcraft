@@ -6,8 +6,10 @@ use crate::network::{
 use crate::network::{Packet, ServerPlayerLeave, ServerPlayerLeaveLoaded};
 use crate::player::Player;
 use crate::{c_debug, c_error, c_info, WorldType};
+use fast_poisson::Poisson;
 use get_size::GetSize;
-use noise::{NoiseFn, OpenSimplex, Perlin};
+use itertools::Itertools;
+use noise::{NoiseFn, OpenSimplex, Perlin, Seedable, Worley};
 use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
 use rayon::prelude::*;
@@ -106,6 +108,7 @@ struct TerrainSettings {
     noise_passes: usize,
     redistribution_factor: f64,
     cave_gen_size: f64,
+    tree_spawn_radius: f64,
 }
 
 #[derive(Default, Debug)]
@@ -182,6 +185,7 @@ impl World {
                 redistribution_factor,
                 water_height,
                 cave_gen_size,
+                tree_spawn_radius,
             } => World::generate_terrain(
                 to_console,
                 base,
@@ -193,6 +197,7 @@ impl World {
                     noise_passes,
                     redistribution_factor,
                     cave_gen_size,
+                    tree_spawn_radius,
                 },
             )?,
         })
@@ -275,6 +280,12 @@ impl World {
         mut world: World,
         terrain_settings: TerrainSettings,
     ) -> Result<World, WorldError> {
+        macro_rules! normalize_noise {
+            ($noise_val: expr) => {
+                $noise_val / 2.0 + 0.5
+            };
+        }
+
         let start = Instant::now();
 
         if terrain_settings.upper_height > world.height {
@@ -302,17 +313,26 @@ impl World {
             })
             .collect();
         let cave_generator = (OpenSimplex::new(seed_generator.next_u32()), 32.0);
+        let mut trees = Poisson::<1>::new()
+            .with_seed(seed_generator.next_u64())
+            .with_dimensions([world.width as f64], terrain_settings.tree_spawn_radius)
+            .into_iter()
+            .map(|pos| pos[0].round() as u32)
+            .unique()
+            .sorted();
 
         c_debug!(to_console, "generators: {:?}", generators);
         c_debug!(to_console, "cave generator: {:?}", cave_generator);
+        c_debug!(to_console, "trees: {trees:?}");
 
-        let (cave, freq) = cave_generator;
+        let (cave, cave_freq) = cave_generator;
+        let mut next_tree = trees.next();
         for x in 0..world.width {
             let x_f = x as f64 * 0.005;
             let mut multiplier = 0.0;
             let mut octaves = 0.0;
             for (generator, octave, freq) in &generators {
-                let generated = (generator.get([x_f * freq]) / 2.0) + 0.5;
+                let generated = normalize_noise!(generator.get([x_f * freq]));
                 // from [-1, 1] to [0, 1]
                 multiplier += octave * generated;
                 octaves += octave;
@@ -321,15 +341,16 @@ impl World {
             multiplier = multiplier.powf(terrain_settings.redistribution_factor);
             let height = terrain_settings.base_height + (multiplier * height_range).round() as u32;
 
-            let mut top_y = 0u32;
+            let (mut top_y, mut prev_top_y) = (0u32, 0u32);
             for y in 0..=u32::max(height, terrain_settings.water_height) {
                 let block = {
                     let noise_here = cave
-                        .get([x as f64 * 0.001 * freq, y as f64 * 0.001 * freq])
+                        .get([x as f64 * 0.001 * cave_freq, y as f64 * 0.001 * cave_freq])
                         .abs();
                     if noise_here < cave_gen_size {
                         Block::Air
                     } else {
+                        prev_top_y = top_y;
                         top_y = y;
                         Block::Stone
                     }
@@ -340,8 +361,21 @@ impl World {
                     world.set_block(x, y, Block::Water)?;
                 }
             }
-            if top_y > terrain_settings.water_height {
+
+            let should_place_grass = top_y > terrain_settings.water_height;
+            if top_y - prev_top_y != 1 {
+                world.set_block(x, top_y, Block::Air)?;
+            } else if should_place_grass {
                 world.set_block(x, top_y, Block::Grass)?;
+            }
+
+            if let Some(tree) = next_tree {
+                if x == tree {
+                    if should_place_grass {
+                        world.generate_tree_at(x, top_y + 1)?;
+                    }
+                    next_tree = trees.next();
+                }
             }
         }
 
@@ -352,6 +386,13 @@ impl World {
             start.elapsed()
         );
         Ok(world)
+    }
+
+    fn generate_tree_at(&mut self, trunk_x: u32, trunk_y: u32) -> Result<(), WorldError> {
+        for y in trunk_y..=trunk_y + 7 {
+            self.set_block(trunk_x, y, Block::Wood)?;
+        }
+        Ok(())
     }
 
     fn check_out_of_bounds_chunk(&self, chunk_x: u32, chunk_y: u32) -> Result<(), WorldError> {
@@ -883,10 +924,6 @@ impl Chunk {
     fn set_block(&mut self, chunk_pos_x: u32, chunk_pos_y: u32, block: Block) -> &mut Self {
         let idx = (chunk_pos_y * self.size + chunk_pos_x) as usize;
         self.blocks[idx] = block;
-        //debug!(
-        //    "[Chunk at ({}, {})] Set block index {} to {:?}",
-        //    self.chunk_x, self.chunk_y, idx, block
-        //);
         self
     }
 

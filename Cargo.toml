@@ -28,3 +28,5 @@ crossterm = { version = "0.28", features = ["event-stream"] }
 futures = "0.3.31"
 tui-textarea = "0.7.0"
 humantime = "2.1.0"
+fast_poisson = "1.0.0"
+itertools = "0.14.0"

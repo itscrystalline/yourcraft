@@ -91,6 +91,9 @@ pub enum WorldType {
         /// will be treated as 1.
         #[arg(long, default_value = "0.075")]
         cave_gen_size: f64,
+        /// The radius used for the Poisson disk distribution for tree geneartion.
+        #[arg(long, default_value = "5.0")]
+        tree_spawn_radius: f64,
     },
 }
 
