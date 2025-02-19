@@ -111,44 +111,43 @@ struct TerrainSettings {
     tree_spawn_radius: f64,
 }
 
-#[derive(Default, Debug)]
-struct AngleDeg(f64);
-
-impl AddAssign for AngleDeg {
-    fn add_assign(&mut self, rhs: Self) {
-        self.0 += rhs.0;
-        self.0 %= 360.0;
-    }
+enum TreeTypes {
+    Basic,
 }
-impl Neg for AngleDeg {
-    type Output = Self;
-    fn neg(self) -> Self::Output {
-        Self(360.0 - self.0)
-    }
+macro_rules! map_to_trunk {
+    ($trunk_x: expr, $trunk_y: expr, $trunk_offset: expr, $spaces: expr) => {
+        $spaces
+            .into_iter()
+            .map(|(x, y, block)| {
+                (
+                    (x + $trunk_x as i32) as u32,
+                    (y + $trunk_y as i32) as u32,
+                    block,
+                )
+            })
+            .collect()
+    };
 }
-impl From<f64> for AngleDeg {
-    fn from(value: f64) -> Self {
-        let mut value = value;
-        if !(-360.0..360.0).contains(&value) {
-            value %= 360.0;
-        }
-        if value < 0.0 {
-            value += 360.0;
-        }
-        Self(value)
-    }
-}
-impl From<AngleDeg> for f64 {
-    fn from(value: AngleDeg) -> Self {
-        value.0
-    }
-}
-impl PartialEq for AngleDeg {
-    fn eq(&self, other: &Self) -> bool {
-        if (self.0 == 0.0 && other.0 == 360.0) || (self.0 == 360.0 && other.0 == 0.0) {
-            true
-        } else {
-            self.0 == other.0
+impl TreeTypes {
+    pub fn get_required_blocks(tree: TreeTypes, trunk_x: u32, trunk_y: u32) -> Vec<BlockPos> {
+        match tree {
+            TreeTypes::Basic => {
+                let layout = vec![
+                    (0, 5, Block::Leaves),
+                    (-1, 4, Block::Leaves),
+                    (0, 4, Block::Leaves),
+                    (1, 4, Block::Leaves),
+                    (-2, 3, Block::Leaves),
+                    (-1, 3, Block::Leaves),
+                    (0, 3, Block::Wood),
+                    (1, 3, Block::Leaves),
+                    (2, 3, Block::Leaves),
+                    (0, 2, Block::Wood),
+                    (0, 1, Block::Wood),
+                    (0, 0, Block::Wood),
+                ];
+                map_to_trunk!(trunk_x, trunk_y, 2, layout)
+            }
         }
     }
 }
@@ -369,7 +368,7 @@ impl World {
             if let Some(tree) = next_tree {
                 if x == tree {
                     if should_place_grass {
-                        world.generate_tree_at(x, top_y + 1)?;
+                        let _ = world.generate_tree_at(x, top_y + 1);
                     }
                     next_tree = trees.next();
                 }
@@ -386,10 +385,13 @@ impl World {
     }
 
     fn generate_tree_at(&mut self, trunk_x: u32, trunk_y: u32) -> Result<(), WorldError> {
-        for y in trunk_y..=trunk_y + 7 {
-            self.set_block(trunk_x, y, Block::Wood)?;
-        }
-        Ok(())
+        let space = TreeTypes::get_required_blocks(TreeTypes::Basic, trunk_x, trunk_y);
+        space.into_iter().try_for_each(|(x, y, block)| {
+            //if !is_solid(self.get_block(x, y)?) {
+            self.set_block(x, y, block)?;
+            //}
+            Ok(())
+        })
     }
 
     fn check_out_of_bounds_chunk(&self, chunk_x: u32, chunk_y: u32) -> Result<(), WorldError> {
