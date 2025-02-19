@@ -9,7 +9,7 @@ use crate::{c_debug, c_error, c_info, WorldType};
 use fast_poisson::Poisson;
 use get_size::GetSize;
 use itertools::Itertools;
-use noise::{NoiseFn, OpenSimplex, Perlin, Seedable, Worley};
+use noise::{NoiseFn, OpenSimplex, Perlin};
 use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
 use rayon::prelude::*;
@@ -280,11 +280,7 @@ impl World {
         mut world: World,
         terrain_settings: TerrainSettings,
     ) -> Result<World, WorldError> {
-        macro_rules! normalize_noise {
-            ($noise_val: expr) => {
-                $noise_val / 2.0 + 0.5
-            };
-        }
+        type TerrainGenerator = Box<dyn FnMut(f64, f64, f64) -> (f64, f64)>;
 
         let start = Instant::now();
 
@@ -303,16 +299,25 @@ impl World {
         let mut seed_generator = SmallRng::seed_from_u64(master_seed);
         let height_range = (terrain_settings.upper_height - terrain_settings.base_height) as f64;
 
-        let generators: Vec<(Perlin, f64, f64)> = (0..terrain_settings.noise_passes)
+        let mut generators: Vec<TerrainGenerator> = (0..terrain_settings.noise_passes)
             .map(|pass| {
-                (
-                    Perlin::new(seed_generator.next_u32()),
-                    1f64 / (2f64.powi(pass as i32)),
-                    2f64.powi(pass as i32),
-                )
+                let seed = seed_generator.next_u32();
+                Box::new(move |x_f, multiplier, octaves| {
+                    let perlin = Perlin::new(seed);
+                    let pass_2n = 2f64.powi(pass as i32);
+                    let noise = perlin.get([x_f * pass_2n]) / 2.0 + 0.5;
+                    let octave = 1f64 / pass_2n;
+                    (multiplier + (octave * noise), octaves + octave)
+                }) as TerrainGenerator
             })
             .collect();
-        let cave_generator = (OpenSimplex::new(seed_generator.next_u32()), 32.0);
+        let cave_generator = {
+            let seed = seed_generator.next_u32();
+            move |x, y| {
+                let simplex = OpenSimplex::new(seed);
+                simplex.get([x * 0.001 * 32.0, y * 0.001 * 32.0]).abs()
+            }
+        };
         let mut trees = Poisson::<1>::new()
             .with_seed(seed_generator.next_u64())
             .with_dimensions([world.width as f64], terrain_settings.tree_spawn_radius)
@@ -321,22 +326,16 @@ impl World {
             .unique()
             .sorted();
 
-        c_debug!(to_console, "generators: {:?}", generators);
-        c_debug!(to_console, "cave generator: {:?}", cave_generator);
         c_debug!(to_console, "trees: {trees:?}");
 
-        let (cave, cave_freq) = cave_generator;
         let mut next_tree = trees.next();
         for x in 0..world.width {
             let x_f = x as f64 * 0.005;
             let mut multiplier = 0.0;
             let mut octaves = 0.0;
-            for (generator, octave, freq) in &generators {
-                let generated = normalize_noise!(generator.get([x_f * freq]));
-                // from [-1, 1] to [0, 1]
-                multiplier += octave * generated;
-                octaves += octave;
-            }
+            generators.iter_mut().for_each(|generator| {
+                (multiplier, octaves) = generator(x_f, multiplier, octaves);
+            });
             multiplier /= octaves;
             multiplier = multiplier.powf(terrain_settings.redistribution_factor);
             let height = terrain_settings.base_height + (multiplier * height_range).round() as u32;
@@ -344,9 +343,7 @@ impl World {
             let (mut top_y, mut prev_top_y) = (0u32, 0u32);
             for y in 0..=u32::max(height, terrain_settings.water_height) {
                 let block = {
-                    let noise_here = cave
-                        .get([x as f64 * 0.001 * cave_freq, y as f64 * 0.001 * cave_freq])
-                        .abs();
+                    let noise_here = cave_generator(x as f64, y as f64);
                     if noise_here < cave_gen_size {
                         Block::Air
                     } else {
