@@ -18,7 +18,7 @@ screen = pygame.display.set_mode((screen_width, screen_height), pygame.SRCALPHA 
 pygame.display.set_caption("Pygame Initialization Example")
 
 # Set pixel scaling
-pixel_scaling = 10
+pixel_scaling = 20
 
 
 # Clock
@@ -35,7 +35,7 @@ BLUE = (0, 0, 255)
 currentPlayer = classic_entity.Player()
 currentPlayer.keys = [pygame.K_a, pygame.K_d, pygame.K_e, pygame.K_q, pygame.K_SPACE]
 position2D = currentPlayer.getComponent("transform2D").getVariable("position")
-speed = 100 * pixel_scaling
+speed = 10 * pixel_scaling
 
 otherPlayers = []
 
@@ -45,7 +45,7 @@ WorldPosition = classic_component.Position2D()
 WorldDelta = classic_component.Velocity2D()
 
 # Block Types (In dev)
-BlockType = [(0, 0, 0), (0, 255, 0), (128, 128, 128), (0, 0, 255), (165, 42, 42), (0, 0, 255), (165, 42, 42)]
+BlockType = [(0, 0, 0), (0, 255, 0), (128, 128, 128), (0, 0, 255), (1, 50, 32), (0, 0, 255), (165, 42, 42)]
 
 # Set connection
 cliNet = network.ServerConnection("127.0.0.1")
@@ -65,6 +65,8 @@ WasJump = False
 
 # Network thread with proper handling of shared resources
 network_lock = threading.Lock()
+
+ReadyToUpdate = {}
 
 running = True
 
@@ -93,13 +95,11 @@ def NetworkThread():
                 for i in range(0, updated_chunk['blocks'].__len__()):
                     World[chunk_coord][(i % 16, i // 16)] = updated_chunk['blocks'][updated_chunk['blocks'].__len__() - 1 - i]
             elif receiving['t'] == network.PLAYER_UPDATE_POS:
-                if receiving['data']['player_id'] == currentPlayer.player_id:
-                    position2D.x = receiving['data']['pos_x'] * pixel_scaling
-                    position2D.y = receiving['data']['pos_y'] * pixel_scaling
-                    WorldPosition.x = -position2D.x
-                    WorldPosition.y = -position2D.y
-            else:
-                print(receiving)
+                receivedPlayerID = receiving['data']['player_id']
+                if receivedPlayerID == currentPlayer.player_id:
+                    if network.PLAYER_UPDATE_POS not in ReadyToUpdate:
+                        ReadyToUpdate[network.PLAYER_UPDATE_POS] = {}
+                    ReadyToUpdate[network.PLAYER_UPDATE_POS][receivedPlayerID] = receiving['data']
 # Draw world
 def draw_world(chunkCoord):
     dChunkX = math.ceil(screen_width / 32 / pixel_scaling)
@@ -135,6 +135,24 @@ def draw_world(chunkCoord):
                     continue
                 World[loadChunk] = {}
                 cliNet.send(network.ClientRequestChunk(loadChunk[0], loadChunk[1]))
+
+# Sync Server
+def sync_data():
+    global ReadyToUpdate
+    for protocolType, protocolValue in ReadyToUpdate.items():
+        match protocolType:
+            case network.PLAYER_UPDATE_POS:
+                for updatePlayerID, rawPosition in protocolValue.items():
+                    if currentPlayer.player_id == updatePlayerID and rawPosition.__len__() != 0:
+                        newX = rawPosition['pos_x'] * pixel_scaling
+                        position2D.x = newX
+                        WorldPosition.x = -position2D.x
+                        newY = rawPosition['pos_y'] * pixel_scaling
+                        position2D.y = newY
+                        WorldPosition.y = -position2D.y
+
+                protocolValue.clear()
+
 # Game loop
 def main():
     global running, screen_size, screen_width, screen_height, WasJump
@@ -150,13 +168,16 @@ def main():
                 screen_width = screen_size[0]
                 screen_height = screen_size[1]
 
+        # Update from server :)
+        sync_data()
+
         # Update movement / controls
         movement_update = False
         WorldDelta.setVariable(vx=0, vy=0)
         keys = pygame.key.get_pressed()
 
         chunkCoord = (int(position2D.x // (16 * pixel_scaling)), int(position2D.y // (16 * pixel_scaling)))
-        chunkPos = (int(position2D.x % (16 * pixel_scaling) // pixel_scaling), int(position2D.y % (16 * pixel_scaling) // pixel_scaling))
+        chunkPos = (15 - int(position2D.x % (16 * pixel_scaling) // pixel_scaling), 15 - int(position2D.y % (16 * pixel_scaling) // pixel_scaling))
 
         # if keys[currentPlayer.keys[0]]:  # Move up
         #     position2D.y += speed * dt
@@ -166,7 +187,6 @@ def main():
             position2D.x -= speed * dt
             WorldDelta.vx -= speed * dt
             movement_update = True
-            cliNet.send(network.ClientPlayerMoveX(position2D.x // pixel_scaling))
         # if keys[currentPlayer.keys[2]]:  # Move down
         #     position2D.y -= speed * dt
         #     WorldDelta.vy -= speed * dt
@@ -175,18 +195,17 @@ def main():
             position2D.x += speed * dt
             WorldDelta.vx += speed * dt
             movement_update = True
-            cliNet.send(network.ClientPlayerMoveX(position2D.x // pixel_scaling))
-        if keys[currentPlayer.keys[2]]:  # Place block
+        if keys[currentPlayer.keys[2]] and chunkCoord[0] >= 0 and chunkCoord[1] >= 0:  # Place block
             if chunkCoord not in World:
                 World[chunkCoord] = {}
-            World[chunkCoord][chunkPos] = 2
-            cliNet.send(network.ClientPlaceBlock(2, position2D.x//pixel_scaling, position2D.y//pixel_scaling))
+            if World[chunkCoord][chunkPos] != 2:
+                World[chunkCoord][chunkPos] = 2
+                cliNet.send(network.ClientPlaceBlock(2, int(position2D.x//pixel_scaling), int(position2D.y//pixel_scaling)))
         if keys[currentPlayer.keys[3]]:  # Remove block
-            if World.get(chunkCoord).get(chunkPos) is not None:
-                del World[chunkCoord][chunkPos]
-                cliNet.send(network.ClientPlaceBlock(0, position2D.x // pixel_scaling, position2D.y // pixel_scaling))
-                if len(World[chunkCoord]) == 0:
-                    del World[chunkCoord]
+            if chunkCoord in World and World.get(chunkCoord).get(chunkPos) is not None:
+                if World[chunkCoord][chunkPos] != 0:
+                    World[chunkCoord][chunkPos] = 0
+                    cliNet.send(network.ClientPlaceBlock(0, int(position2D.x // pixel_scaling), int(position2D.y // pixel_scaling)))
         if keys[currentPlayer.keys[4]]:  # Jump
             if not WasJump:
                 cliNet.send(network.ClientPlayerJump())
@@ -196,8 +215,15 @@ def main():
 
         # Debug chunk
         if keys[pygame.K_EQUALS]:
-            print(World.get(chunkCoord))
-            print(position2D)
+            cliNet.send(network.ClientPlayerMoveX(position2D.x / pixel_scaling))
+        if keys[pygame.K_w]:  # Move up
+            position2D.y += speed * dt
+            WorldDelta.vy += speed * dt
+            movement_update = True
+        if keys[pygame.K_s]:  # Move down
+            position2D.y -= speed * dt
+            WorldDelta.vy -= speed * dt
+            movement_update = True
 
         # Reset screen
         screen.fill((130, 200, 229))
@@ -206,6 +232,7 @@ def main():
         if movement_update:
             WorldPosition.x -= WorldDelta.vx
             WorldPosition.y -= WorldDelta.vy
+            cliNet.send(network.ClientPlayerMoveX(position2D.x / pixel_scaling))
 
         # Draw world (visible chunks)
         draw_world(chunkCoord)

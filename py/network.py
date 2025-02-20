@@ -72,9 +72,9 @@ class ClientRequestChunk(Packet):
 class ClientPlaceBlock(Packet):
     def __init__(self, block, x, y):
         super().__init__(PLACE_BLOCK)
-        self.block = block
-        self.x = x
-        self.y = y
+        self.block : int = block
+        self.x : int = x
+        self.y : int = y
 
 
 class ClientPlayerMoveX(Packet):
