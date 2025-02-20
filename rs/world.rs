@@ -360,7 +360,7 @@ impl World {
 
             let should_place_grass = top_y > terrain_settings.water_height;
             if top_y - prev_top_y != 1 {
-                if !is_solid(world.get_block(x, top_y)?){
+                if !is_solid(world.get_block(x, top_y)?) {
                     world.set_block(x, top_y, Block::Air)?;
                 }
             } else if should_place_grass {
@@ -771,7 +771,7 @@ impl World {
             (grid_x + hitbox_width, grid_y + hitbox_height),
             (grid_x + hitbox_width, grid_y.saturating_sub(1)),
             (grid_x.saturating_sub(1), grid_y + hitbox_height),
-            (grid_x.saturating_sub(1), grid_y.saturating_sub(1))
+            (grid_x.saturating_sub(1), grid_y.saturating_sub(1)),
         ];
 
         let block_pos_vec: Vec<BlockPos> = positions
@@ -810,12 +810,13 @@ impl World {
                 .map(|&(conn, surr)| {
                     let mut new_player = conn.server_player.clone();
                     let old_pos = (new_player.x, new_player.y);
-                    let (has_changed_fall, has_changed_collision);
+                    let (has_changed_x, has_changed_fall, has_changed_collision);
                     (new_player, has_changed_fall) = new_player.do_fall(surr);
+                    (new_player, has_changed_x) = new_player.move_x();
                     (new_player, has_changed_collision) = new_player.do_collision(surr);
                     (
                         ClientConnection::with(conn, new_player),
-                        has_changed_collision | has_changed_fall,
+                        has_changed_x | has_changed_collision | has_changed_fall,
                         old_pos,
                     )
                 })
@@ -833,21 +834,27 @@ impl World {
                             new_player.server_player.y.round() as u32,
                         )
                         .unwrap_or((0, 0));
-                    let players_loading_old_chunk = self
+                    let players_loading_old_chunk: Vec<&ClientConnection> = self
                         .get_list_of_players_loading_chunk(old_chunk_x, old_chunk_y)
-                        .unwrap_or_default();
-                    let players_loading_chunk = self
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|conn| conn.id != new_player.id)
+                        .collect();
+                    let players_loading_chunk: Vec<&ClientConnection> = self
                         .get_list_of_players_loading_chunk(chunk_x, chunk_y)
-                        .unwrap_or_default();
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|conn| conn.id != new_player.id)
+                        .collect();
 
                     let old_players: Vec<&ClientConnection> = players_loading_old_chunk
                         .clone()
-                        .into_par_iter()
+                        .into_iter()
                         .filter(|conn| !players_loading_chunk.contains(conn))
                         .collect();
                     let new_players: Vec<&ClientConnection> = players_loading_chunk
                         .clone()
-                        .into_par_iter()
+                        .into_iter()
                         .filter(|conn| !players_loading_old_chunk.contains(conn))
                         .collect();
 

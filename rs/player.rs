@@ -1,3 +1,5 @@
+use itertools::sorted;
+
 use crate::{
     constants,
     world::{is_solid, BlockPos, World, WorldError},
@@ -6,6 +8,7 @@ use crate::{
 #[derive(Debug, PartialEq, Clone)]
 pub struct Player {
     pub x: f32,
+    pub next_x: Option<f32>,
     pub y: f32,
     pub hitbox_width: u32,
     pub hitbox_height: u32,
@@ -18,12 +21,22 @@ impl Player {
         let (highest_x, highest_y) = world.get_highest_block_at(x)?;
         Ok(Player {
             x: highest_x as f32,
+            next_x: None,
             y: (highest_y + 1) as f32,
             hitbox_width: constants::HITBOX_WIDTH,
             hitbox_height: constants::HITBOX_HEIGHT,
             velocity: 0.0,
             acceleration: 0.0,
         })
+    }
+
+    pub fn move_x(mut self) -> (Self, bool) {
+        let has_changed = self.next_x.is_some();
+        if let Some(next) = self.next_x {
+            self.x = next;
+            self.next_x = None;
+        }
+        (self, has_changed)
     }
 
     pub fn do_collision(mut self, surrounding: [BlockPos; 10]) -> (Self, bool) {
@@ -34,12 +47,12 @@ impl Player {
 
         if self.x - snap_x > 0.0 {
             moving_right = true;
-        }
-        else if self.x - snap_x < 0.0 {
+        } else if self.x - snap_x < 0.0 {
             moving_left = true;
         }
 
-        let [bottom, top, left_up, left_down, right_up, right_down, top_right, bottom_right, top_left, bottom_left] = surrounding;
+        let [bottom, top, left_up, left_down, right_up, right_down, top_right, bottom_right, top_left, bottom_left] =
+            surrounding;
 
         let mut has_changed = false;
 
@@ -55,12 +68,12 @@ impl Player {
             }
         }
         if self.x != snap_x {
-            if (is_solid(left_up.2) || is_solid(left_down.2)) && moving_left{
+            if (is_solid(left_up.2) || is_solid(left_down.2)) && moving_left {
                 self.x = snap_x;
                 has_changed = true;
             }
 
-            if (is_solid(right_up.2) || is_solid(right_down.2)) && moving_right{
+            if (is_solid(right_up.2) || is_solid(right_down.2)) && moving_right {
                 self.x = snap_x;
                 has_changed = true;
             }
@@ -70,7 +83,8 @@ impl Player {
     }
 
     fn is_grounded(y: f32, surrounding: &[BlockPos; 10]) -> bool {
-        (is_solid(surrounding[0].2) || is_solid(surrounding[7].2) || is_solid(surrounding[9].2)) && y.round() == y
+        (is_solid(surrounding[0].2) || is_solid(surrounding[7].2) || is_solid(surrounding[9].2))
+            && y.round() == y
     }
 
     pub fn do_fall(mut self, surrounding: [BlockPos; 10]) -> (Self, bool) {
