@@ -4,7 +4,7 @@ use crate::network::{
     ServerUpdateBlock,
 };
 use crate::network::{Packet, ServerPlayerLeave, ServerPlayerLeaveLoaded};
-use crate::player::Player;
+use crate::player::{Player, Surrounding};
 use crate::{c_debug, c_error, c_info, WorldType};
 use fast_poisson::Poisson;
 use get_size::GetSize;
@@ -749,7 +749,7 @@ impl World {
         Ok(())
     }
 
-    pub fn get_neighbours_of_player(&self, player: &Player) -> [BlockPos; 10] {
+    pub fn get_neighbours_of_player(&self, player: &Player) -> Surrounding {
         macro_rules! get_or_air {
             ($world: expr, $x: expr, $y: expr) => {
                 match $world.get_block($x, $y) {
@@ -762,16 +762,18 @@ impl World {
         let (hitbox_width, hitbox_height) = (player.hitbox_width, player.hitbox_height);
 
         let positions = [
-            (grid_x, grid_y.saturating_sub(1)),
-            (grid_x, grid_y + hitbox_height),
-            (grid_x.saturating_sub(1), grid_y + (hitbox_height / 2)),
-            (grid_x.saturating_sub(1), grid_y),
-            (grid_x + hitbox_width, grid_y + (hitbox_height / 2)),
-            (grid_x + hitbox_width, grid_y),
-            (grid_x + hitbox_width, grid_y + hitbox_height),
-            (grid_x + hitbox_width, grid_y.saturating_sub(1)),
             (grid_x.saturating_sub(1), grid_y + hitbox_height),
+            (grid_x, grid_y + hitbox_height),
+            (grid_x + 1, grid_y + hitbox_height),
+            (grid_x.saturating_sub(1), grid_y + (hitbox_height / 2)),
+            (grid_x, grid_y + (hitbox_height / 2)),
+            (grid_x + 1, grid_y + (hitbox_height / 2)),
+            (grid_x.saturating_sub(1), grid_y),
+            (grid_x, grid_y),
+            (grid_x + 1, grid_y),
             (grid_x.saturating_sub(1), grid_y.saturating_sub(1)),
+            (grid_x, grid_y.saturating_sub(1)),
+            (grid_x + 1, grid_y.saturating_sub(1)),
         ];
 
         let block_pos_vec: Vec<BlockPos> = positions
@@ -781,7 +783,7 @@ impl World {
                 (x, y, bl)
             })
             .collect();
-        block_pos_vec.try_into().unwrap()
+        Surrounding::from(block_pos_vec.as_slice())
     }
 
     pub async fn tick(
@@ -797,26 +799,27 @@ impl World {
 
         //collision
         {
-            let surrounding: Vec<[BlockPos; 10]> = self
+            let surrounding: Vec<Surrounding> = self
                 .players
                 .par_iter()
                 .map(|conn| self.get_neighbours_of_player(&conn.server_player))
                 .collect();
-            let player_surrounding: Vec<(&ClientConnection, [BlockPos; 10])> =
+            let player_surrounding: Vec<(&ClientConnection, Surrounding)> =
                 zip(&self.players, surrounding).collect();
 
             let res: Vec<(ClientConnection, bool, (f32, f32))> = player_surrounding
                 .par_iter()
-                .map(|&(conn, surr)| {
+                .map(|(conn, surr)| {
                     let mut new_player = conn.server_player.clone();
                     let old_pos = (new_player.x, new_player.y);
-                    let (has_changed_x, has_changed_fall, has_changed_collision);
+                    let (has_changed_x, has_changed_fall, has_changed_collision, has_jumped);
                     (new_player, has_changed_fall) = new_player.do_fall(surr);
+                    (new_player, has_jumped) = new_player.do_jump(surr);
                     (new_player, has_changed_x) = new_player.move_x();
                     (new_player, has_changed_collision) = new_player.do_collision(surr);
                     (
                         ClientConnection::with(conn, new_player),
-                        has_changed_x | has_changed_collision | has_changed_fall,
+                        has_changed_x | has_jumped | has_changed_collision | has_changed_fall,
                         old_pos,
                     )
                 })

@@ -1,3 +1,5 @@
+use std::convert::Infallible;
+
 use itertools::sorted;
 
 use crate::{
@@ -14,6 +16,40 @@ pub struct Player {
     pub hitbox_height: u32,
     pub velocity: f32,
     pub acceleration: f32,
+    pub do_jump: bool,
+}
+
+pub struct Surrounding {
+    pub top_left: BlockPos,
+    pub top_center: BlockPos,
+    pub top_right: BlockPos,
+    pub left_up: BlockPos,
+    pub upper_body: BlockPos,
+    pub right_up: BlockPos,
+    pub left_down: BlockPos,
+    pub lower_body: BlockPos,
+    pub right_down: BlockPos,
+    pub bottom_left: BlockPos,
+    pub bottom_center: BlockPos,
+    pub bottom_right: BlockPos,
+}
+impl From<&[BlockPos]> for Surrounding {
+    fn from(v: &[BlockPos]) -> Self {
+        Self {
+            top_left: v[0],
+            top_center: v[1],
+            top_right: v[2],
+            left_up: v[3],
+            upper_body: v[4],
+            right_up: v[5],
+            left_down: v[6],
+            lower_body: v[7],
+            right_down: v[8],
+            bottom_left: v[9],
+            bottom_center: v[10],
+            bottom_right: v[11],
+        }
+    }
 }
 
 impl Player {
@@ -27,6 +63,7 @@ impl Player {
             hitbox_height: constants::HITBOX_HEIGHT,
             velocity: 0.0,
             acceleration: 0.0,
+            do_jump: false,
         })
     }
 
@@ -39,7 +76,7 @@ impl Player {
         (self, has_changed)
     }
 
-    pub fn do_collision(mut self, surrounding: [BlockPos; 10]) -> (Self, bool) {
+    pub fn do_collision(mut self, surrounding: &Surrounding) -> (Self, bool) {
         // bottom corner
         let (snap_x, snap_y) = (self.x.round(), self.y.round());
 
@@ -51,44 +88,53 @@ impl Player {
             moving_left = true;
         }
 
-        let [bottom, top, left_up, left_down, right_up, right_down, top_right, bottom_right, top_left, bottom_left] =
-            surrounding;
+        let Surrounding {
+            top_center,
+            bottom_center,
+            ..
+        } = surrounding;
 
         let mut has_changed = false;
 
         if self.y != snap_y {
-            if is_solid(bottom.2) && self.velocity < 0.0 {
+            if is_solid(bottom_center.2) && self.velocity < 0.0 {
                 self.y = snap_y;
                 has_changed = true;
             }
 
-            if is_solid(top.2) && self.velocity > 0.0 {
+            if is_solid(top_center.2) && self.velocity > 0.0 {
                 self.y = snap_y;
                 has_changed = true;
             }
         }
-        if self.x != snap_x {
-            if (is_solid(left_up.2) || is_solid(left_down.2)) && moving_left {
-                self.x = snap_x;
-                has_changed = true;
-            }
-
-            if (is_solid(right_up.2) || is_solid(right_down.2)) && moving_right {
-                self.x = snap_x;
-                has_changed = true;
-            }
-        }
+        //if self.x != snap_x {
+        //    if (is_solid(left_up.2) || is_solid(left_down.2)) && moving_left {
+        //        self.x = snap_x;
+        //        has_changed = true;
+        //    }
+        //
+        //    if (is_solid(right_up.2) || is_solid(right_down.2)) && moving_right {
+        //        self.x = snap_x;
+        //        has_changed = true;
+        //    }
+        //}
 
         (self, has_changed)
     }
 
-    fn is_grounded(y: f32, surrounding: &[BlockPos; 10]) -> bool {
-        (is_solid(surrounding[0].2) || is_solid(surrounding[7].2) || is_solid(surrounding[9].2))
+    fn is_grounded(y: f32, surrounding: &Surrounding) -> bool {
+        let Surrounding {
+            bottom_left,
+            bottom_center,
+            bottom_right,
+            ..
+        } = surrounding;
+        (is_solid(bottom_left.2) || is_solid(bottom_center.2) || is_solid(bottom_right.2))
             && y.round() == y
     }
 
-    pub fn do_fall(mut self, surrounding: [BlockPos; 10]) -> (Self, bool) {
-        if !Self::is_grounded(self.y, &surrounding) {
+    pub fn do_fall(mut self, surrounding: &Surrounding) -> (Self, bool) {
+        if !Self::is_grounded(self.y, surrounding) {
             self.velocity += self.acceleration;
             self.velocity = self.velocity.max(-constants::TERMINAL_VELOCITY);
             self.y += self.velocity;
@@ -100,12 +146,15 @@ impl Player {
         }
     }
 
-    pub fn do_jump(mut self, surrounding: [BlockPos; 10]) -> Self {
-        if Self::is_grounded(self.y, &surrounding) {
+    pub fn do_jump(mut self, surrounding: &Surrounding) -> (Self, bool) {
+        if Self::is_grounded(self.y, surrounding) && self.do_jump {
             self.acceleration += constants::INITIAL_JUMP_ACCEL;
             self.velocity += constants::INITIAL_JUMP_SPEED;
             self.y += self.velocity;
+            self.do_jump = false;
+            (self, true)
+        } else {
+            (self, false)
         }
-        self
     }
 }
