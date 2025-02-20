@@ -360,7 +360,9 @@ impl World {
 
             let should_place_grass = top_y > terrain_settings.water_height;
             if top_y - prev_top_y != 1 {
-                world.set_block(x, top_y, Block::Air)?;
+                if !is_solid(world.get_block(x, top_y)?){
+                    world.set_block(x, top_y, Block::Air)?;
+                }
             } else if should_place_grass {
                 world.set_block(x, top_y, Block::Grass)?;
             }
