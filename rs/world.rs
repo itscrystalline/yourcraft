@@ -360,7 +360,9 @@ impl World {
 
             let should_place_grass = top_y > terrain_settings.water_height;
             if top_y - prev_top_y != 1 {
-                world.set_block(x, top_y, Block::Air)?;
+                if !is_solid(world.get_block(x, top_y)?){
+                    world.set_block(x, top_y, Block::Air)?;
+                }
             } else if should_place_grass {
                 world.set_block(x, top_y, Block::Grass)?;
             }
@@ -387,9 +389,7 @@ impl World {
     fn generate_tree_at(&mut self, trunk_x: u32, trunk_y: u32) -> Result<(), WorldError> {
         let space = TreeTypes::get_required_blocks(TreeTypes::Basic, trunk_x, trunk_y);
         space.into_iter().try_for_each(|(x, y, block)| {
-            //if !is_solid(self.get_block(x, y)?) {
-            self.set_block(x, y, block)?;
-            //}
+            self.raw_set_block(x, y, block)?;
             Ok(())
         })
     }
