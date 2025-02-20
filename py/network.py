@@ -3,8 +3,19 @@ import socket
 
 HELLO = 1
 PLAYER_COORDINATES = 2
+CHUNK_REQUEST = 3
 CHUNK_UPDATE = 4
+CHUNK_UNLOAD = 5
+PLAYER_JOIN = 6
+PLAYER_ENTER_LOAD = 7
+PLAYER_LEAVE_LOAD = 8
+PLAYER_LEAVE = 9
 GOODBYE = 10
+PLACE_BLOCK = 11
+UPDATE_BLOCK = 12
+PLAYER_MOVE = 13
+PLAYER_JUMP = 14
+PLAYER_UPDATE_POS = 15
 KICK = 16
 HEARTBEAT_SERVER = 17
 HEARTBEAT_CLIENT = 18
@@ -50,9 +61,36 @@ class Heartbeat(Packet):
     def __init__(self):
         super().__init__(HEARTBEAT_CLIENT)
 
-class ClientRequestChunk (Packet):
+
+class ClientRequestChunk(Packet):
     def __init__(self, x, y):
-        super().__init__(3)
+        super().__init__(CHUNK_REQUEST)
+        self.chunk_coords_x = x
+        self.chunk_coords_y = y
+
+
+class ClientPlaceBlock(Packet):
+    def __init__(self, block, x, y):
+        super().__init__(PLACE_BLOCK)
+        self.block : int = block
+        self.x : int = x
+        self.y : int = y
+
+
+class ClientPlayerMoveX(Packet):
+    def __init__(self, x):
+        super().__init__(PLAYER_MOVE)
+        self.pos_x = x
+
+
+class ClientPlayerJump(Packet):
+    def __init__(self):
+        super().__init__(PLAYER_JUMP)
+
+
+class ClientUnloadChunk(Packet):
+    def __init__(self, x, y):
+        super().__init__(CHUNK_UNLOAD)
         self.chunk_coords_x = x
         self.chunk_coords_y = y
 

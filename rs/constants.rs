@@ -7,5 +7,5 @@ pub const SECONDS_BETWEEN_HEARTBEATS: u64 = 10;
 pub const G: f32 = 9.81 / (TICKS_PER_SECOND.pow(2) as f32);
 /// unit: units / tick (20ms)
 pub const TERMINAL_VELOCITY: f32 = 54.0 / (TICKS_PER_SECOND as f32);
-pub const INITIAL_JUMP_SPEED: f32 = 5.0 / (TICKS_PER_SECOND as f32);
-pub const INITIAL_JUMP_ACCEL: f32 = 20.0 / (TICKS_PER_SECOND.pow(2) as f32);
+pub const INITIAL_JUMP_SPEED: f32 = 25.0 / (TICKS_PER_SECOND as f32);
+pub const INITIAL_JUMP_ACCEL: f32 = 50.0 / (TICKS_PER_SECOND.pow(2) as f32);
