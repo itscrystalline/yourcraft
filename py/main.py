@@ -79,13 +79,11 @@ def NetworkThread():
 
         # Synchronize access to the shared resource
         with network_lock:
-            print(receiving)
             if receiving['t'] == network.KICK:
                 print("kicked because", receiving['data']['msg'])
                 running = False
                 return
             elif receiving['t'] == network.HEARTBEAT_SERVER:
-                print("heartbeat received")
                 cliNet.send(network.Heartbeat())
             elif receiving['t'] == network.CHUNK_UPDATE:
                 updated_chunk = receiving['data']['chunk']
@@ -95,6 +93,7 @@ def NetworkThread():
                 for i in range(0, updated_chunk['blocks'].__len__()):
                     World[chunk_coord][(i % 16, i // 16)] = updated_chunk['blocks'][updated_chunk['blocks'].__len__() - 1 - i]
             elif receiving['t'] == network.PLAYER_UPDATE_POS:
+                print(receiving)
                 receivedPlayerID = receiving['data']['player_id']
                 if receivedPlayerID == currentPlayer.player_id:
                     if network.PLAYER_UPDATE_POS not in ReadyToUpdate:

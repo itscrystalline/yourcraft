@@ -749,7 +749,7 @@ impl World {
         Ok(())
     }
 
-    pub fn get_neighbours_of_player(&self, player: &Player) -> [BlockPos; 6] {
+    pub fn get_neighbours_of_player(&self, player: &Player) -> [BlockPos; 10] {
         macro_rules! get_or_air {
             ($world: expr, $x: expr, $y: expr) => {
                 match $world.get_block($x, $y) {
@@ -762,12 +762,16 @@ impl World {
         let (hitbox_width, hitbox_height) = (player.hitbox_width, player.hitbox_height);
 
         let positions = [
-            (grid_x, grid_y.wrapping_sub(1)),
-            (grid_x, grid_y + 1),
-            (grid_x.wrapping_sub(1), grid_y + (hitbox_height / 2)),
-            (grid_x.wrapping_sub(1), grid_y),
+            (grid_x, grid_y.saturating_sub(1)),
+            (grid_x, grid_y + hitbox_height),
+            (grid_x.saturating_sub(1), grid_y + (hitbox_height / 2)),
+            (grid_x.saturating_sub(1), grid_y),
             (grid_x + hitbox_width, grid_y + (hitbox_height / 2)),
             (grid_x + hitbox_width, grid_y),
+            (grid_x + hitbox_width, grid_y + hitbox_height),
+            (grid_x + hitbox_width, grid_y.saturating_sub(1)),
+            (grid_x.saturating_sub(1), grid_y + hitbox_height),
+            (grid_x.saturating_sub(1), grid_y.saturating_sub(1))
         ];
 
         let block_pos_vec: Vec<BlockPos> = positions
@@ -793,12 +797,12 @@ impl World {
 
         //collision
         {
-            let surrounding: Vec<[BlockPos; 6]> = self
+            let surrounding: Vec<[BlockPos; 10]> = self
                 .players
                 .par_iter()
                 .map(|conn| self.get_neighbours_of_player(&conn.server_player))
                 .collect();
-            let player_surrounding: Vec<(&ClientConnection, [BlockPos; 6])> =
+            let player_surrounding: Vec<(&ClientConnection, [BlockPos; 10])> =
                 zip(&self.players, surrounding).collect();
 
             let res: Vec<(ClientConnection, bool, (f32, f32))> = player_surrounding

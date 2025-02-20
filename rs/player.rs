@@ -26,42 +26,54 @@ impl Player {
         })
     }
 
-    pub fn do_collision(mut self, surrounding: [BlockPos; 6]) -> (Self, bool) {
+    pub fn do_collision(mut self, surrounding: [BlockPos; 10]) -> (Self, bool) {
         // bottom corner
         let (snap_x, snap_y) = (self.x.round(), self.y.round());
 
-        let [bottom, top, left_up, left_down, right_up, right_down] = surrounding;
+        let (mut moving_left, mut moving_right) = (false, false);
+
+        if self.x - snap_x > 0.0 {
+            moving_right = true;
+        }
+        else if self.x - snap_x < 0.0 {
+            moving_left = true;
+        }
+
+        let [bottom, top, left_up, left_down, right_up, right_down, top_right, bottom_right, top_left, bottom_left] = surrounding;
 
         let mut has_changed = false;
 
-        if is_solid(bottom.2) && self.y != snap_y {
-            self.y = snap_y;
-            has_changed = true;
-        }
+        if self.y != snap_y {
+            if is_solid(bottom.2) && self.velocity < 0.0 {
+                self.y = snap_y;
+                has_changed = true;
+            }
 
-        if is_solid(top.2) && self.y != snap_y {
-            self.y = snap_y;
-            has_changed = true;
+            if is_solid(top.2) && self.velocity > 0.0 {
+                self.y = snap_y;
+                has_changed = true;
+            }
         }
+        if self.x != snap_x {
+            if (is_solid(left_up.2) || is_solid(left_down.2)) && moving_left{
+                self.x = snap_x;
+                has_changed = true;
+            }
 
-        if (is_solid(left_up.2) || is_solid(left_down.2)) && self.x != snap_x {
-            self.x = snap_x;
-            has_changed = true;
-        }
-
-        if (is_solid(right_up.2) || is_solid(right_down.2)) && self.x != snap_x {
-            self.x = snap_x;
-            has_changed = true;
+            if (is_solid(right_up.2) || is_solid(right_down.2)) && moving_right{
+                self.x = snap_x;
+                has_changed = true;
+            }
         }
 
         (self, has_changed)
     }
 
-    fn is_grounded(y: f32, surrounding: &[BlockPos; 6]) -> bool {
+    fn is_grounded(y: f32, surrounding: &[BlockPos; 10]) -> bool {
         is_solid(surrounding[0].2) && y.round() == y
     }
 
-    pub fn do_fall(mut self, surrounding: [BlockPos; 6]) -> (Self, bool) {
+    pub fn do_fall(mut self, surrounding: [BlockPos; 10]) -> (Self, bool) {
         if !Self::is_grounded(self.y, &surrounding) {
             self.velocity += self.acceleration;
             self.velocity = self.velocity.max(-constants::TERMINAL_VELOCITY);
@@ -74,7 +86,7 @@ impl Player {
         }
     }
 
-    pub fn do_jump(mut self, surrounding: [BlockPos; 6]) -> Self {
+    pub fn do_jump(mut self, surrounding: [BlockPos; 10]) -> Self {
         if Self::is_grounded(self.y, &surrounding) {
             self.acceleration += constants::INITIAL_JUMP_ACCEL;
             self.velocity += constants::INITIAL_JUMP_SPEED;
