@@ -70,7 +70,7 @@ impl Player {
     }
 
     fn is_grounded(y: f32, surrounding: &[BlockPos; 10]) -> bool {
-        is_solid(surrounding[0].2) && y.round() == y
+        (is_solid(surrounding[0].2) || is_solid(surrounding[7].2) || is_solid(surrounding[9].2)) && y.round() == y
     }
 
     pub fn do_fall(mut self, surrounding: [BlockPos; 10]) -> (Self, bool) {

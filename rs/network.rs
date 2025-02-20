@@ -565,6 +565,7 @@ async fn process_client_packet(
                     );
                 }
                 for conn in players_loading_new_chunk {
+                    // TODO : Remove self client player
                     if new_players.contains(&conn) {
                         let enter_packet = ServerPlayerEnterLoaded {
                             player_id: new_player.id,
