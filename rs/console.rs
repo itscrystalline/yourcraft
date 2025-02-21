@@ -1,6 +1,5 @@
 use crossterm::event::EventStream;
 use futures::{FutureExt, StreamExt};
-use get_size::GetSize;
 use log::{debug, error, info, warn};
 use ratatui::{
     layout::{Constraint, Layout},
@@ -18,7 +17,6 @@ use std::{
 };
 use thiserror::Error;
 use tokio::{
-    net::UdpSocket,
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
     task::JoinHandle,
     time,
@@ -27,10 +25,7 @@ use tui_textarea::{Input, Key, TextArea};
 
 use crate::{
     constants,
-    network::{
-        ClientConnection, Packet, PacketTypes, ServerPlayerEnterLoaded, ServerPlayerLeaveLoaded,
-        ServerPlayerUpdatePos,
-    },
+    network::{ClientConnection, PacketTypes, ToNetwork},
     world::{self, BlockPos, World},
 };
 use tokio::time::Duration;
@@ -540,7 +535,7 @@ impl RatatuiConsole<'_> {
 
 pub async fn process_command(
     to_console: ToConsole,
-    socket: &UdpSocket,
+    to_network: ToNetwork,
     world: &mut World,
     command: Command,
     tick_times_saved: [Duration; 8],
@@ -611,7 +606,7 @@ pub async fn process_command(
             });
         }
         Command::Kick(id, msg) => {
-            world.kick(to_console, socket, id, Some(&msg)).await?;
+            world.kick(to_console, to_network, id, Some(&msg)).await?;
         }
         Command::Teleport { id, x, y } => {
             let idx_maybe = world.players.par_iter().position_any(|conn| conn.id == id);
@@ -655,52 +650,49 @@ pub async fn process_command(
                     .collect();
 
                 for conn in old_players {
-                    let leave_packet = ServerPlayerLeaveLoaded {
-                        player_id: new_player.id,
-                        player_name: new_player.name.clone(),
-                    };
                     encode_and_send!(
+                        to_network,
                         to_console,
-                        PacketTypes::ServerPlayerLeaveLoaded,
-                        leave_packet,
-                        socket,
+                        PacketTypes::ServerPlayerLeaveLoaded {
+                            player_id: new_player.id,
+                            player_name: new_player.name.clone(),
+                        },
                         conn.addr
                     );
                 }
-                let move_packet = ServerPlayerUpdatePos {
-                    player_id: new_player.id,
-                    pos_x: new_player.server_player.x,
-                    pos_y: new_player.server_player.y,
-                };
                 for conn in players_loading_new_chunk {
                     if new_players.contains(&conn) {
-                        let enter_packet = ServerPlayerEnterLoaded {
-                            player_id: new_player.id,
-                            player_name: new_player.name.clone(),
-                            pos_x: new_player.server_player.x,
-                            pos_y: new_player.server_player.y,
-                        };
                         encode_and_send!(
+                            to_network,
                             to_console,
-                            PacketTypes::ServerPlayerEnterLoaded,
-                            enter_packet,
-                            socket,
+                            PacketTypes::ServerPlayerEnterLoaded {
+                                player_id: new_player.id,
+                                player_name: new_player.name.clone(),
+                                pos_x: new_player.server_player.x,
+                                pos_y: new_player.server_player.y,
+                            },
                             conn.addr
                         );
                     }
                     encode_and_send!(
+                        to_network,
                         to_console,
-                        PacketTypes::ServerPlayerUpdatePos,
-                        move_packet.clone(),
-                        socket,
+                        PacketTypes::ServerPlayerUpdatePos {
+                            player_id: new_player.id,
+                            pos_x: new_player.server_player.x,
+                            pos_y: new_player.server_player.y,
+                        },
                         conn.addr
                     );
                 }
                 encode_and_send!(
+                    to_network,
                     to_console,
-                    PacketTypes::ServerPlayerUpdatePos,
-                    move_packet,
-                    socket,
+                    PacketTypes::ServerPlayerUpdatePos {
+                        player_id: new_player.id,
+                        pos_x: new_player.server_player.x,
+                        pos_y: new_player.server_player.y,
+                    },
                     new_player.addr
                 );
                 c_info!(
@@ -715,7 +707,7 @@ pub async fn process_command(
         Command::SetBlock { pos } => {
             let (x, y, block) = pos;
             match world
-                .set_block_and_notify(to_console.clone(), socket, x, y, block)
+                .set_block_and_notify(to_console.clone(), to_network, x, y, block)
                 .await
             {
                 Ok(_) => c_info!(to_console, "Set block at ({x}, {y}) to {block:?}"),

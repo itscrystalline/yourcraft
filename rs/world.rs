@@ -1,9 +1,9 @@
 use crate::console::ToConsole;
 use crate::network::{
     ClientConnection, PacketTypes, ServerKick, ServerPlayerEnterLoaded, ServerPlayerUpdatePos,
-    ServerUpdateBlock,
+    ServerUpdateBlock, ToNetwork,
 };
-use crate::network::{Packet, ServerPlayerLeave, ServerPlayerLeaveLoaded};
+use crate::network::{NetworkPacket, ServerPlayerLeave, ServerPlayerLeaveLoaded};
 use crate::player::{Player, Surrounding};
 use crate::{c_debug, c_error, c_info, WorldType};
 use fast_poisson::Poisson;
@@ -565,7 +565,7 @@ impl World {
     pub async fn set_block_and_notify(
         &mut self,
         to_console: ToConsole,
-        socket: &UdpSocket,
+        to_network: ToNetwork,
         pos_x: u32,
         pos_y: u32,
         block: Block,
@@ -573,18 +573,17 @@ impl World {
         self.set_block(pos_x, pos_y, block)?;
         let (chunk_x, chunk_y) = self.get_chunk_block_is_in(pos_x, pos_y)?;
         let players_loading = self.get_list_of_players_loading_chunk(chunk_x, chunk_y)?;
-        let response = ServerUpdateBlock {
-            block: block.into(),
-            x: pos_x,
-            y: pos_y,
-        };
+        let response = ServerUpdateBlock;
 
         for player in players_loading {
             encode_and_send!(
+                to_network,
                 to_console,
-                PacketTypes::ServerUpdateBlock,
-                response.clone(),
-                socket,
+                PacketTypes::ServerUpdateBlock {
+                    block: block.into(),
+                    x: pos_x,
+                    y: pos_y,
+                },
                 player.addr
             );
         }
@@ -592,20 +591,24 @@ impl World {
         Ok(())
     }
 
-    pub async fn shutdown(&mut self, to_console: ToConsole, socket: &UdpSocket) -> io::Result<()> {
+    pub async fn shutdown(
+        &mut self,
+        to_console: ToConsole,
+        to_network: ToNetwork,
+    ) -> io::Result<()> {
         c_info!(to_console, "Shutting down Server!");
         let kick_msg = String::from("Server Shutting Down!");
         self.player_loaded
             .par_iter_mut()
             .for_each(|chunk| chunk.clear());
 
-        let kick = ServerKick { msg: kick_msg };
         for player in &mut self.players {
             encode_and_send!(
+                to_network,
                 to_console,
-                PacketTypes::ServerKick,
-                kick.clone(),
-                socket,
+                PacketTypes::ServerKick {
+                    msg: kick_msg.clone()
+                },
                 player.addr
             );
         }
@@ -616,7 +619,7 @@ impl World {
     pub async fn kick(
         &mut self,
         to_console: ToConsole,
-        socket: &UdpSocket,
+        to_network: ToNetwork,
         id: u32,
         msg: Option<&str>,
     ) -> io::Result<()> {
@@ -661,28 +664,33 @@ impl World {
                     msg: kick_msg.into(),
                 };
                 encode_and_send!(
+                    to_network,
                     to_console,
-                    PacketTypes::ServerKick,
-                    kick,
-                    socket,
+                    PacketTypes::ServerKick {
+                        msg: kick_msg.into(),
+                    },
                     connection.addr
                 );
 
                 for player in self.players.iter() {
                     if players_loading_chunk.contains(&player) {
                         encode_and_send!(
+                            to_network,
                             to_console,
-                            PacketTypes::ServerPlayerLeaveLoaded,
-                            to_broadcast_chunk.clone(),
-                            socket,
+                            PacketTypes::ServerPlayerLeaveLoaded {
+                                player_name: connection.name.clone(),
+                                player_id: connection.id,
+                            },
                             player.addr
                         );
                     }
                     encode_and_send!(
+                        to_network,
                         to_console,
-                        PacketTypes::ServerPlayerLeave,
-                        to_broadcast.clone(),
-                        socket,
+                        PacketTypes::ServerPlayerLeave {
+                            player_name: connection.name.clone(),
+                            player_id: connection.id,
+                        },
                         player.addr
                     );
                 }
@@ -721,7 +729,7 @@ impl World {
     async fn tick_water(
         &mut self,
         to_console: ToConsole,
-        socket: &UdpSocket,
+        to_network: ToNetwork,
     ) -> Result<(), WorldError> {
         let water_to_update: HashSet<&(u32, u32, Block)> = self
             .to_update
@@ -743,7 +751,7 @@ impl World {
             .collect();
         self.to_update.retain(|pos| pos.2 != Block::Water);
         for (x, y) in to_update {
-            self.set_block_and_notify(to_console.clone(), socket, x, y, Block::Water)
+            self.set_block_and_notify(to_console.clone(), to_network.clone(), x, y, Block::Water)
                 .await?;
         }
         Ok(())
@@ -789,11 +797,11 @@ impl World {
     pub async fn tick(
         &mut self,
         to_console: ToConsole,
-        socket: &UdpSocket,
+        to_network: ToNetwork,
     ) -> io::Result<Duration> {
         let now = Instant::now();
 
-        if let Err(e) = self.tick_water(to_console.clone(), socket).await {
+        if let Err(e) = self.tick_water(to_console.clone(), to_network).await {
             c_error!(to_console, "Error occurred while ticking water: {e}")
         };
 

@@ -2,7 +2,6 @@ use crate::console::ToConsole;
 use crate::player::Player;
 use crate::world::{Chunk, World, WorldError};
 use crate::{c_debug, c_error, c_info, c_warn};
-use get_size::GetSize;
 use rand::prelude::*;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -10,21 +9,12 @@ use serde_pickle::{from_slice, to_vec, DeOptions, SerOptions};
 use std::io;
 use std::net::SocketAddr;
 use tokio::net::UdpSocket;
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use tokio::task::JoinHandle;
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Packet {
-    pub t: u8,
-    #[serde(with = "serde_bytes")]
-    pub data: Vec<u8>,
-}
-
-impl Packet {
-    pub fn encode<T: Serialize>(t: PacketTypes, packet: T) -> serde_pickle::Result<Vec<u8>> {
-        let packet = Packet {
-            t: t.into(),
-            data: to_vec(&packet, SerOptions::new())?,
-        };
-        to_vec(&packet, SerOptions::new())
+impl PacketTypes {
+    pub fn to_bytes(self) -> serde_pickle::Result<Vec<u8>> {
+        to_vec(&self, SerOptions::new())
     }
 }
 
@@ -87,48 +77,33 @@ impl ClientConnection {
 macro_rules! define_packets {
     (
         $(
-            $name:ident = $value:expr => $struct:ident {
+            $name:ident = $value:expr => {
                 $($field_name:ident: $field_type:ty),* $(,)?
             }
         ),* $(,)?
     ) => {
-        #[derive(Serialize, Deserialize, Debug)]
+        #[derive(Serialize, Deserialize, Debug, Clone)]
         #[repr(u8)]
         pub enum PacketTypes {
-            Invalid = 0,
-            $($name = $value),*
-        }
-
-        impl From<u8> for PacketTypes {
-            fn from(id: u8) -> PacketTypes {
-                match id {
-                    $($value => PacketTypes::$name),*,
-                    _ => PacketTypes::Invalid,
-                }
-            }
+            $($name {$($field_name: $field_type),*}),*
         }
 
         impl From<PacketTypes> for u8 {
             fn from(packet: PacketTypes) -> u8 {
-                packet as u8
+                match packet {
+                    $($name { .. } => $value),*,
+                }
             }
         }
-
-        $(
-            #[derive(Serialize, Deserialize, Debug, Clone)]
-            pub struct $struct {
-                $(pub $field_name: $field_type),*
-            }
-        )*
     };
 }
 
 // Use the macro to define packets
 define_packets!(
-    ClientHello = 1 => ClientHello {
+    ClientHello = 1 => {
         name: String
     },
-    ServerSync = 2 => ServerSync {
+    ServerSync = 2 => {
         player_id: u32,
         world_width: u32,
         world_height: u32,
@@ -136,111 +111,145 @@ define_packets!(
         spawn_x: f32,
         spawn_y: f32,
     },
-    ClientRequestChunk = 3 => ClientRequestChunk {
+    ClientRequestChunk = 3 => {
         chunk_coords_x: u32,
         chunk_coords_y: u32,
     },
-    ServerChunkResponse = 4 => ServerChunkResponse {
+    ServerChunkResponse = 4 => {
         chunk: NetworkChunk,
     },
-    ClientUnloadChunk = 5 => ClientUnloadChunk {
+    ClientUnloadChunk = 5 => {
         chunk_coords_x: u32,
         chunk_coords_y: u32,
     },
-    ServerPlayerJoin = 6 => ServerPlayerJoin {
+    ServerPlayerJoin = 6 => {
         player_name: String,
         player_id: u32
     },
-    ServerPlayerEnterLoaded = 7 => ServerPlayerEnterLoaded {
+    ServerPlayerEnterLoaded = 7 => {
         player_name: String,
         player_id: u32,
         pos_x: f32,
         pos_y: f32,
     },
-    ServerPlayerLeaveLoaded = 8 => ServerPlayerLeaveLoaded {
+    ServerPlayerLeaveLoaded = 8 => {
         player_name: String,
         player_id: u32
     },
-    ServerPlayerLeave = 9 => ServerPlayerLeave {
+    ServerPlayerLeave = 9 => {
         player_name: String,
         player_id: u32
     },
-    ClientGoodbye = 10 => ClientGoodbye {},
-    ClientPlaceBlock = 11 => ClientPlaceBlock {
+    ClientGoodbye = 10 => {},
+    ClientPlaceBlock = 11 => {
         block: u8,
         x: u32,
         y: u32
     },
-    ServerUpdateBlock = 12 => ServerUpdateBlock {
+    ServerUpdateBlock = 12 => {
         block: u8,
         x: u32,
         y: u32
     },
-    ClientPlayerMoveX = 13 => ClientPlayerMoveX {
+    ClientPlayerMoveX = 13 => {
         pos_x: f32
     },
-    ClientPlayerJump = 14 => ClientPlayerJump {},
-    ServerPlayerUpdatePos = 15 => ServerPlayerUpdatePos {
+    ClientPlayerJump = 14 => {},
+    ServerPlayerUpdatePos = 15 => {
         player_id: u32,
         pos_x: f32,
         pos_y: f32
     },
-    ServerKick = 16 => ServerKick {
+    ServerKick = 16 => {
         msg: String
     },
-    ServerHeartbeat = 17 => ServerHeartbeat {},
-    ClientHeartbeat = 18 => ClientHeartbeat {}
+    ServerHeartbeat = 17 => {},
+    ClientHeartbeat = 18 => {}
 );
-
-/// returns from the function early if packet fails to decode.
-macro_rules! unwrap_packet_or_ignore {
-    ($to_console: expr, $packet: expr) => {
-        match from_slice(&$packet.data, DeOptions::new()) {
-            Ok(packet) => packet,
-            Err(err) => {
-                c_error!($to_console, "Failed to deserialize packet: {}", err);
-                c_error!($to_console, "Received differing packet content from what type of packet suggests ({:?})! ignoring.",
-                                        PacketTypes::from($packet.t));
-                return Ok(());
-            }
-        }
-    };
-}
 
 #[macro_export]
 macro_rules! encode_and_send {
-    ($to_console: expr, $packet_type: expr, $packet: expr, $socket: expr, $addr: expr) => {
-        let encoded = Packet::encode($packet_type, $packet).unwrap();
-        c_debug!($to_console, "packet heap size: {}", encoded.get_heap_size());
-        $socket.send_to(&encoded, $addr).await?;
+    ($to_network: expr, $to_console: expr, $packet: expr, $addr: expr) => {
+        let encoded = $packet.to_bytes().unwrap();
+        $to_network.send($crate::network::NetworkThreadMessage::Packet(
+            $addr, encoded,
+        ));
     };
+}
+
+pub enum NetworkThreadMessage {
+    Shutdown,
+    Packet(SocketAddr, Vec<u8>),
+}
+
+pub type ToNetwork = UnboundedSender<NetworkThreadMessage>;
+pub type FromNetwork = UnboundedReceiver<(SocketAddr, PacketTypes)>;
+type ToMain = UnboundedSender<(SocketAddr, PacketTypes)>;
+
+pub fn init(
+    socket: UdpSocket,
+    to_console: ToConsole,
+    max_network_errors: u8,
+) -> (JoinHandle<()>, FromNetwork, ToNetwork) {
+    let (to_main, from_network) = mpsc::unbounded_channel::<(SocketAddr, PacketTypes)>();
+    let (to_network, from_main) = mpsc::unbounded_channel::<NetworkThreadMessage>();
+    let network_thread = tokio::spawn(async move {
+        let (to_main, mut from_main) = (to_main, from_main);
+        let mut buf = [0u8; 1024];
+        let mut network_error_strikes = 0u8;
+        c_info!(to_console, "Listening on {}", socket.local_addr().unwrap());
+        loop {
+            tokio::select! {
+                maybe_packet_incoming = socket.recv_from(&mut buf) => {
+                    match maybe_packet_incoming {
+                        Ok((len, addr)) => {
+                            incoming_packet_handler(to_console.clone(), to_main.clone(), len, addr, &mut buf);
+                        },
+                        Err(e) => {
+                            c_error!(to_console, "Encountered a network error while trying to recieve a packet: {}", e);
+                            network_error_strikes += 1;
+                            if network_error_strikes > max_network_errors {
+                                c_error!(to_console, "max_network_errors reached! shutting down.");
+                                break;
+                            }
+                        }
+                    }
+                }
+                outgoing_message = from_main.recv() => {
+                    if let Some(message) = outgoing_message {
+                        match message {
+                            NetworkThreadMessage::Shutdown => break,
+                            NetworkThreadMessage::Packet(addr, packet) => {
+                                socket.send_to(&packet, addr);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
+    (network_thread, from_network, to_network)
 }
 
 pub async fn incoming_packet_handler(
     to_console: ToConsole,
-    socket: &UdpSocket,
+    to_main: ToMain,
+    len: usize,
+    addr: SocketAddr,
     buf: &mut [u8],
-    world: &mut World,
-    recv: (usize, SocketAddr),
 ) -> io::Result<()> {
-    let (len, client_addr) = recv;
-    c_debug!(
-        to_console,
-        "{:?} bytes received from {:?}",
-        len,
-        client_addr
-    );
+    c_debug!(to_console, "{:?} bytes received from {:?}", len, addr);
 
-    let packet: serde_pickle::Result<Packet> = from_slice(&buf[..len], DeOptions::new());
+    let packet: serde_pickle::Result<PacketTypes> = from_slice(&buf[..len], DeOptions::new());
     match packet {
         Ok(packet) => {
-            process_client_packet(to_console, socket, packet, client_addr, world).await?;
+            let _ = to_main.send((addr, packet));
         }
         Err(e) => {
             c_warn!(
                 to_console,
                 "Recieved unknown packet from {}, ignoring! (Err: {:?})",
-                client_addr,
+                addr,
                 e
             );
         }
@@ -251,7 +260,7 @@ pub async fn incoming_packet_handler(
 
 pub async fn heartbeat(
     to_console: ToConsole,
-    socket: &UdpSocket,
+    to_network: ToNetwork,
     world: &mut World,
 ) -> io::Result<()> {
     // sends a heartbeat packet to all incoming players.
@@ -259,10 +268,9 @@ pub async fn heartbeat(
     for player in world.players.iter_mut() {
         if player.connection_alive {
             encode_and_send!(
+                to_network,
                 to_console,
-                PacketTypes::ServerHeartbeat,
-                ServerHeartbeat {},
-                socket,
+                PacketTypes::ServerHeartbeat {},
                 player.addr
             );
             player.connection_alive = false;
@@ -280,7 +288,7 @@ pub async fn heartbeat(
             world
                 .kick(
                     to_console.clone(),
-                    socket,
+                    to_network.clone(),
                     id,
                     Some("Kicked due to inactivity."),
                 )
@@ -289,10 +297,10 @@ pub async fn heartbeat(
     }
     Ok(())
 }
-async fn process_client_packet(
+pub async fn process_client_packet(
     to_console: ToConsole,
-    socket: &UdpSocket,
-    packet: Packet,
+    to_network: ToNetwork,
+    packet: PacketTypes,
     addr: SocketAddr,
     world: &mut World,
 ) -> io::Result<()> {
@@ -315,14 +323,13 @@ async fn process_client_packet(
             }
         };
     }
-    match packet.t.into() {
-        PacketTypes::ClientHello => {
-            let hello_packet: ClientHello = unwrap_packet_or_ignore!(to_console, packet);
-            c_info!(to_console, "{} joined the server!", hello_packet.name);
+    match packet {
+        PacketTypes::ClientHello { name } => {
+            c_info!(to_console, "{} joined the server!", name);
             let spawn_x = world.get_spawn();
             let connection = unwrap_or_return_early!(
                 to_console,
-                ClientConnection::new_at(addr, world, spawn_x, hello_packet.name),
+                ClientConnection::new_at(addr, world, spawn_x, name),
                 "cannot spawn player: {}"
             );
             let spawn_block_pos = (
@@ -330,16 +337,19 @@ async fn process_client_packet(
                 connection.server_player.y.round() as u32,
             );
 
-            let response = ServerSync {
-                player_id: connection.id,
-                world_width: world.width,
-                world_height: world.height,
-                chunk_size: world.chunk_size,
-                spawn_x: connection.server_player.x,
-                spawn_y: connection.server_player.y,
-            };
-
-            encode_and_send!(to_console, PacketTypes::ServerSync, response, socket, addr);
+            encode_and_send!(
+                to_network,
+                to_console,
+                PacketTypes::ServerSync {
+                    player_id: connection.id,
+                    world_width: world.width,
+                    world_height: world.height,
+                    chunk_size: world.chunk_size,
+                    spawn_x: connection.server_player.x,
+                    spawn_y: connection.server_player.y,
+                },
+                addr
+            );
 
             // notify other players and the ones loading the chunk
             let spawn_chunk_pos = world
@@ -349,31 +359,26 @@ async fn process_client_packet(
                 .get_list_of_players_loading_chunk(spawn_chunk_pos.0, spawn_chunk_pos.1)
                 .unwrap();
 
-            let to_broadcast = ServerPlayerJoin {
-                player_name: connection.name.clone(),
-                player_id: connection.id,
-            };
-            let to_broadcast_chunk = ServerPlayerEnterLoaded {
-                player_name: connection.name.clone(),
-                player_id: connection.id,
-                pos_x: connection.server_player.x,
-                pos_y: connection.server_player.y,
-            };
-
             for player in world.players.iter() {
                 encode_and_send!(
+                    to_network,
                     to_console,
-                    PacketTypes::ServerPlayerJoin,
-                    to_broadcast.clone(),
-                    socket,
+                    PacketTypes::ServerPlayerJoin {
+                        player_name: connection.name.clone(),
+                        player_id: connection.id,
+                    },
                     player.addr
                 );
                 if players_loading_chunk.contains(&player) {
                     encode_and_send!(
+                        to_network,
                         to_console,
-                        PacketTypes::ServerPlayerEnterLoaded,
-                        to_broadcast_chunk.clone(),
-                        socket,
+                        PacketTypes::ServerPlayerEnterLoaded {
+                            player_name: connection.name.clone(),
+                            player_id: connection.id,
+                            pos_x: connection.server_player.x,
+                            pos_y: connection.server_player.y,
+                        },
                         player.addr
                     );
                 }
