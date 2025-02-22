@@ -117,6 +117,9 @@ async fn main() -> io::Result<()> {
     c_debug!(to_console, "Starting up with {:?}", settings);
 
     let mut world_tick = time::interval(Duration::from_millis(1000 / constants::TICKS_PER_SECOND));
+    let mut physics_tick = time::interval(Duration::from_millis(
+        1000 / constants::PHYS_TICKS_PER_SECOND,
+    ));
     let mut heartbeat_tick =
         time::interval(Duration::from_secs(constants::SECONDS_BETWEEN_HEARTBEATS));
     let mut uptime_clock = time::interval(Duration::from_secs(1));
@@ -147,41 +150,37 @@ async fn main() -> io::Result<()> {
     // uptime, stats
     let mut uptime = Duration::default();
     let mut last_tick_time = Duration::default();
+    let mut phys_last_tick_time = Duration::default();
     // 1s, 5s, 10s, 30s, 1m, 2m, 5m, 10m
     let mut tick_times_saved: [Duration; 8] = [Duration::default(); 8];
     let mut tick_times_current: [Duration; 8] = [Duration::default(); 8];
     let mut tick_times_count: [u32; 8] = [0u32; 8];
 
     let socket = UdpSocket::bind(format!("0.0.0.0:{}", settings.port)).await?;
-    let mut buf = [0u8; 1024];
-    let mut network_error_strikes = 0u8;
-    c_info!(to_console, "Listening on {}", socket.local_addr()?);
+    let (network_thread, mut from_network, to_network) =
+        network::init(socket, to_console.clone(), settings.max_network_errors);
     loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
                 break;
             }
-            packet_maybe = socket.recv_from(&mut buf) => {
+            packet_maybe = from_network.recv() => {
                 // hopefully will fix windows bullshit
-                match packet_maybe {
-                    Ok(packet) => network::incoming_packet_handler(to_console.clone(), &socket, &mut buf, &mut world, packet).await?,
-                    Err(e) => {
-                        c_error!(to_console, "Encountered a network error while trying to recieve a packet: {}", e);
-                        network_error_strikes += 1;
-                        if network_error_strikes > settings.max_network_errors {
-                            c_error!(to_console, "max_network_errors reached! shutting down.");
-                            break;
-                        }
-                    }
+                if let Some((addr, packet)) = packet_maybe {
+                    network::process_client_packet(to_console.clone(), to_network.clone(),packet, addr , &mut world).await?;
                 }
+
             }
             _ = heartbeat_tick.tick() => {
                 if !settings.no_heartbeat {
-                    network::heartbeat(to_console.clone(), &socket, &mut world).await?;
+                    network::heartbeat(to_console.clone(), to_network.clone(), &mut world).await?;
                 }
             }
+            _ = physics_tick.tick() => {
+                phys_last_tick_time = world.physics_tick(to_network.clone()).await?;
+            }
             _ = world_tick.tick() => {
-                last_tick_time = world.tick(to_console.clone(), &socket).await?;
+                last_tick_time = world.world_tick(to_console.clone(), to_network.clone()).await?;
                 tick_times_current.par_iter_mut().enumerate().for_each(|(idx, time)| {
                     *time = ((*time * tick_times_count[idx]) + last_tick_time) / (tick_times_count[idx] + 1);
                 });
@@ -229,7 +228,7 @@ async fn main() -> io::Result<()> {
             }
             command_opt = from_console.recv() => {
                 if let Some(command) = command_opt {
-                    if console::process_command(to_console.clone(), &socket, &mut world, command, tick_times_saved, last_tick_time).await? {
+                    if console::process_command(to_console.clone(), to_network.clone(), &mut world, command, tick_times_saved, last_tick_time, phys_last_tick_time).await? {
                         break;
                     }
                 }
@@ -237,9 +236,13 @@ async fn main() -> io::Result<()> {
         }
     }
 
-    world.shutdown(to_console.clone(), &socket).await?;
+    world
+        .shutdown(to_console.clone(), to_network.clone())
+        .await?;
     let _ = to_console.send(console::ToConsoleType::Quit);
+    let _ = to_network.send(network::NetworkThreadMessage::Shutdown);
     console_thread.await.unwrap();
+    network_thread.await.unwrap();
 
     info!("Server shutdown complete after being up for {uptime:?}.");
     Ok(())

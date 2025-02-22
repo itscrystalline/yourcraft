@@ -1,10 +1,10 @@
 import pickle
 import socket
 
-HELLO = 1
+HELLO = "ClientHello"
 PLAYER_COORDINATES = 2
 CHUNK_REQUEST = 3
-CHUNK_UPDATE = 4
+CHUNK_UPDATE = "ServerChunkResponse"
 CHUNK_UNLOAD = 5
 PLAYER_JOIN = 6
 PLAYER_ENTER_LOAD = 7
@@ -15,21 +15,20 @@ PLACE_BLOCK = 11
 UPDATE_BLOCK = 12
 PLAYER_MOVE = 13
 PLAYER_JUMP = 14
-PLAYER_UPDATE_POS = 15
-KICK = 16
-HEARTBEAT_SERVER = 17
+PLAYER_UPDATE_POS = "ServerPlayerUpdatePos"
+KICK = "ServerKick"
+HEARTBEAT_SERVER = "ServerHeartbeat"
 HEARTBEAT_CLIENT = 18
+
 
 class Packet:
     def __init__(self, packet_type):
         self.t = packet_type
+
     def serialize(self):
-        serialized_inner = pickle.dumps(self.to_dict())
-        return pickle.dumps({"t": self.t, "data": serialized_inner})
-    def to_dict(self):
-        d = dict(self.__dict__)
-        d.pop("t")
-        return d
+        contents = self.__dict__
+        name = type(self).__name__
+        return pickle.dumps((name, contents))
 
 
 class ServerConnection:
@@ -42,22 +41,21 @@ class ServerConnection:
 
     def recv(self):
         packet = pickle.loads(self.socket.recv(1024*16))
-        packet['data'] = pickle.loads(packet['data'])
-        return packet
+        return {"t": next(iter(packet.keys())), "data": next(iter(packet.values()))}
 
 
-class Hello(Packet):
+class ClientHello(Packet):
     def __init__(self, username):
         super().__init__(HELLO)
         self.name = username
 
 
-class Goodbye(Packet):
+class ClientGoodbye(Packet):
     def __init__(self):
         super().__init__(GOODBYE)
 
 
-class Heartbeat(Packet):
+class ClientHeartbeat(Packet):
     def __init__(self):
         super().__init__(HEARTBEAT_CLIENT)
 
@@ -97,7 +95,7 @@ class ClientUnloadChunk(Packet):
 def test():
     conn = ServerConnection("127.0.0.1")
 
-    conn.send(Hello("test"))
+    conn.send(ClientHello("test"))
     INIT_DATA = conn.recv()
 
     print(INIT_DATA)
@@ -115,4 +113,8 @@ def test():
             exit(0)
         elif receiving['t'] == HEARTBEAT_SERVER:
             print("heartbeat received")
-            conn.send(Heartbeat())
+            conn.send(ClientHeartbeat())
+
+
+if __name__ == "__main__":
+    test()
