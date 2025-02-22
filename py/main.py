@@ -62,6 +62,7 @@ position2D.y = INIT_DATA['spawn_y'] * pixel_scaling
 WorldPosition.x = -INIT_DATA['spawn_x'] * pixel_scaling
 WorldPosition.y = -INIT_DATA['spawn_y'] * pixel_scaling
 WasJump = False
+prev_direction = 0
 
 # Network thread with proper handling of shared resources
 network_lock = threading.Lock()
@@ -93,7 +94,6 @@ def NetworkThread():
                 for i in range(0, updated_chunk['blocks'].__len__()):
                     World[chunk_coord][(i % 16, i // 16)] = updated_chunk['blocks'][updated_chunk['blocks'].__len__() - 1 - i]
             elif receiving['t'] == network.PLAYER_UPDATE_POS:
-                print(receiving)
                 receivedPlayerID = receiving['data']['player_id']
                 if receivedPlayerID == currentPlayer.player_id:
                     if network.PLAYER_UPDATE_POS not in ReadyToUpdate:
@@ -154,7 +154,7 @@ def sync_data():
 
 # Game loop
 def main():
-    global running, screen_size, screen_width, screen_height, WasJump
+    global running, screen_size, screen_width, screen_height, WasJump, prev_direction
     while running:
         dt = clock.tick(50) / 1000  # Calculate time per frame
         for event in pygame.event.get():
@@ -178,22 +178,32 @@ def main():
         chunkCoord = (int(position2D.x // (16 * pixel_scaling)), int(position2D.y // (16 * pixel_scaling)))
         chunkPos = (15 - int(position2D.x % (16 * pixel_scaling) // pixel_scaling), 15 - int(position2D.y % (16 * pixel_scaling) // pixel_scaling))
 
-        # if keys[currentPlayer.keys[0]]:  # Move up
-        #     position2D.y += speed * dt
-        #     WorldDelta.vy += speed * dt
-        #     movement_update = True
+        need_update_pos = False
+        speed_update = 0
         if keys[currentPlayer.keys[0]]:  # Move left
             position2D.x -= speed * dt
             WorldDelta.vx -= speed * dt
             movement_update = True
-        # if keys[currentPlayer.keys[2]]:  # Move down
-        #     position2D.y -= speed * dt
-        #     WorldDelta.vy -= speed * dt
-        #     movement_update = True
-        if keys[currentPlayer.keys[1]]:  # Move right
+            if prev_direction != -1:
+                need_update_pos = True
+                speed_update = -1 * speed * dt
+                prev_direction = -1
+        elif keys[currentPlayer.keys[1]]:  # Move right
             position2D.x += speed * dt
             WorldDelta.vx += speed * dt
             movement_update = True
+            if prev_direction != 1:
+                need_update_pos = True
+                speed_update = speed * dt
+                prev_direction = 1
+        else:
+            if prev_direction != 0:
+                print("stopped")
+                movement_update = True
+                need_update_pos = True
+                speed_update = 0
+                prev_direction = 0
+
         if keys[currentPlayer.keys[2]] and chunkCoord[0] >= 0 and chunkCoord[1] >= 0:  # Place block
             if chunkCoord not in World:
                 World[chunkCoord] = {}
@@ -214,7 +224,7 @@ def main():
 
         # Debug chunk
         if keys[pygame.K_EQUALS]:
-            cliNet.send(network.ClientPlayerMoveX(position2D.x / pixel_scaling))
+            cliNet.send(network.ClientPlayerXVelocity(position2D.x / pixel_scaling))
         if keys[pygame.K_w]:  # Move up
             position2D.y += speed * dt
             WorldDelta.vy += speed * dt
@@ -231,7 +241,9 @@ def main():
         if movement_update:
             WorldPosition.x -= WorldDelta.vx
             WorldPosition.y -= WorldDelta.vy
-            cliNet.send(network.ClientPlayerMoveX(position2D.x / pixel_scaling))
+            if need_update_pos:
+                print("sendiong velocity")
+                cliNet.send(network.ClientPlayerXVelocity(speed_update / pixel_scaling))
 
         # Draw world (visible chunks)
         draw_world(chunkCoord)

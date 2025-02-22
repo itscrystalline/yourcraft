@@ -26,6 +26,7 @@ use tui_textarea::{Input, Key, TextArea};
 use crate::{
     constants,
     network::{ClientConnection, PacketTypes, ToNetwork},
+    player::{Acceleration, Velocity},
     world::{self, BlockPos, World},
 };
 use tokio::time::Duration;
@@ -623,8 +624,8 @@ pub async fn process_command(
 
                 world.players[idx].server_player.x = x;
                 world.players[idx].server_player.y = y;
-                world.players[idx].server_player.velocity = 0.0;
-                world.players[idx].server_player.acceleration = 0.0;
+                world.players[idx].server_player.velocity = Velocity::default();
+                world.players[idx].server_player.acceleration = Acceleration::default();
 
                 let new_player = &world.players[idx];
                 let (chunk_x, chunk_y) = world

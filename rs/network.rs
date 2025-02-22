@@ -151,8 +151,8 @@ define_packets!(
         x: u32,
         y: u32
     },
-    ClientPlayerMoveX = 13 => {
-        pos_x: f32
+    ClientPlayerXVelocity = 13 => {
+        vel_x: f32
     },
     ClientPlayerJump = 14 => {},
     ServerPlayerUpdatePos = 15 => {
@@ -240,7 +240,7 @@ pub async fn incoming_packet_handler(
     addr: SocketAddr,
     buf: &mut [u8],
 ) -> io::Result<()> {
-    c_debug!(to_console, "{:?} bytes received from {:?}", len, addr);
+    //c_debug!(to_console, "{:?} bytes received from {:?}", len, addr);
 
     let packet: serde_pickle::Result<PacketTypes> = from_slice(&buf[..len], DeOptions::new());
     match packet {
@@ -409,15 +409,19 @@ pub async fn process_client_packet(
                         connection.server_player.x.round() as u32,
                         connection.server_player.y.round() as u32,
                     );
-                    let last_location_chunk_pos = world
-                        .get_chunk_block_is_in(last_location.0, last_location.1)
-                        .unwrap();
-                    let players_loading_chunk = world
-                        .get_list_of_players_loading_chunk(
+                    let last_location_chunk_pos = unwrap_or_return_early!(
+                        to_console,
+                        world.get_chunk_block_is_in(last_location.0, last_location.1),
+                        "cannot get chunk: {}"
+                    );
+                    let players_loading_chunk = unwrap_or_return_early!(
+                        to_console,
+                        world.get_list_of_players_loading_chunk(
                             last_location_chunk_pos.0,
                             last_location_chunk_pos.1,
-                        )
-                        .unwrap();
+                        ),
+                        "cannot get players loading chunk: {}"
+                    );
 
                     for player in world.players.iter() {
                         encode_and_send!(
@@ -479,9 +483,10 @@ pub async fn process_client_packet(
                 world.players[idx].server_player.do_jump = true;
             });
         }
-        PacketTypes::ClientPlayerMoveX { pos_x } => {
+        PacketTypes::ClientPlayerXVelocity { vel_x } => {
             assert_player_exists!(to_console, world, addr, par_iter_mut, position_any, idx, {
-                world.players[idx].server_player.next_x = Some(pos_x);
+                c_debug!(to_console, "get vel x: {vel_x}");
+                world.players[idx].server_player.velocity.x = vel_x;
             });
         }
         PacketTypes::ClientRequestChunk {

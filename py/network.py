@@ -13,7 +13,6 @@ PLAYER_LEAVE = 9
 GOODBYE = 10
 PLACE_BLOCK = 11
 UPDATE_BLOCK = 12
-PLAYER_MOVE = 13
 PLAYER_JUMP = 14
 PLAYER_UPDATE_POS = "ServerPlayerUpdatePos"
 KICK = "ServerKick"
@@ -22,9 +21,6 @@ HEARTBEAT_CLIENT = 18
 
 
 class Packet:
-    def __init__(self, packet_type):
-        self.t = packet_type
-
     def serialize(self):
         contents = self.__dict__
         name = type(self).__name__
@@ -46,51 +42,44 @@ class ServerConnection:
 
 class ClientHello(Packet):
     def __init__(self, username):
-        super().__init__(HELLO)
         self.name = username
 
 
 class ClientGoodbye(Packet):
-    def __init__(self):
-        super().__init__(GOODBYE)
+    pass
 
 
 class ClientHeartbeat(Packet):
-    def __init__(self):
-        super().__init__(HEARTBEAT_CLIENT)
+    pass
 
 
 class ClientRequestChunk(Packet):
     def __init__(self, x, y):
-        super().__init__(CHUNK_REQUEST)
         self.chunk_coords_x = x
         self.chunk_coords_y = y
 
 
 class ClientPlaceBlock(Packet):
     def __init__(self, block, x, y):
-        super().__init__(PLACE_BLOCK)
-        self.block : int = block
-        self.x : int = x
-        self.y : int = y
+        self.block: int = block
+        self.x: int = x
+        self.y: int = y
 
 
-class ClientPlayerMoveX(Packet):
+class ClientPlayerXVelocity(Packet):
     def __init__(self, x):
-        super().__init__(PLAYER_MOVE)
-        self.pos_x = x
+        self.vel_x = x
 
 
 class ClientPlayerJump(Packet):
-    def __init__(self):
-        super().__init__(PLAYER_JUMP)
+    pass
 
 
 class ClientUnloadChunk(Packet):
     def __init__(self, x, y):
-        super().__init__(CHUNK_UNLOAD)
         self.chunk_coords_x = x
         self.chunk_coords_y = y
+
 
 def test():
     conn = ServerConnection("127.0.0.1")

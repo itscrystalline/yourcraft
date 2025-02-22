@@ -786,14 +786,12 @@ impl World {
             .map(|(conn, surr)| {
                 let mut new_player = conn.server_player.clone();
                 let old_pos = (new_player.x, new_player.y);
-                let (has_changed_x, has_changed_fall, has_changed_collision, has_jumped);
-                (new_player, has_changed_fall) = new_player.do_fall(surr);
-                (new_player, has_jumped) = new_player.do_jump(surr);
-                (new_player, has_changed_x) = new_player.move_x();
+                let (has_changed_collision, has_jumped);
+                (new_player, has_jumped) = new_player.do_move(surr);
                 (new_player, has_changed_collision) = new_player.do_collision(surr);
                 (
                     ClientConnection::with(conn, new_player),
-                    has_changed_x | has_jumped | has_changed_collision | has_changed_fall,
+                    has_jumped | has_changed_collision,
                     old_pos,
                 )
             })
