@@ -1,7 +1,3 @@
-use std::convert::Infallible;
-
-use itertools::sorted;
-
 use crate::{
     constants,
     world::{is_solid, BlockPos, World, WorldError},

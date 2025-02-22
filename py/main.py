@@ -49,7 +49,7 @@ BlockType = [(0, 0, 0), (0, 255, 0), (128, 128, 128), (0, 0, 255), (1, 50, 32), 
 
 # Set connection
 cliNet = network.ServerConnection("127.0.0.1")
-cliNet.send(network.Hello("test"))
+cliNet.send(network.ClientHello("test"))
 
 # Synchronize network initialization
 INIT_DATA = cliNet.recv()['data']
@@ -84,7 +84,7 @@ def NetworkThread():
                 running = False
                 return
             elif receiving['t'] == network.HEARTBEAT_SERVER:
-                cliNet.send(network.Heartbeat())
+                cliNet.send(network.ClientHeartbeat())
             elif receiving['t'] == network.CHUNK_UPDATE:
                 updated_chunk = receiving['data']['chunk']
                 # Update the world data with the new chunk
@@ -159,7 +159,7 @@ def main():
         dt = clock.tick(50) / 1000  # Calculate time per frame
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                cliNet.send(network.Goodbye())
+                cliNet.send(network.ClientGoodbye())
                 pygame.quit()
                 running = False
             elif event.type == pygame.VIDEORESIZE:

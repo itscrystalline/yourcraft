@@ -150,6 +150,7 @@ async fn main() -> io::Result<()> {
     // uptime, stats
     let mut uptime = Duration::default();
     let mut last_tick_time = Duration::default();
+    let mut phys_last_tick_time = Duration::default();
     // 1s, 5s, 10s, 30s, 1m, 2m, 5m, 10m
     let mut tick_times_saved: [Duration; 8] = [Duration::default(); 8];
     let mut tick_times_current: [Duration; 8] = [Duration::default(); 8];
@@ -166,7 +167,7 @@ async fn main() -> io::Result<()> {
             packet_maybe = from_network.recv() => {
                 // hopefully will fix windows bullshit
                 if let Some((addr, packet)) = packet_maybe {
-                    network::process_client_packet(to_console.clone(), to_network.clone(),packet, addr , &mut world);
+                    network::process_client_packet(to_console.clone(), to_network.clone(),packet, addr , &mut world).await?;
                 }
 
             }
@@ -175,8 +176,11 @@ async fn main() -> io::Result<()> {
                     network::heartbeat(to_console.clone(), to_network.clone(), &mut world).await?;
                 }
             }
+            _ = physics_tick.tick() => {
+                phys_last_tick_time = world.physics_tick(to_network.clone()).await?;
+            }
             _ = world_tick.tick() => {
-                last_tick_time = world.tick(to_console.clone(), to_network.clone()).await?;
+                last_tick_time = world.world_tick(to_console.clone(), to_network.clone()).await?;
                 tick_times_current.par_iter_mut().enumerate().for_each(|(idx, time)| {
                     *time = ((*time * tick_times_count[idx]) + last_tick_time) / (tick_times_count[idx] + 1);
                 });
@@ -224,7 +228,7 @@ async fn main() -> io::Result<()> {
             }
             command_opt = from_console.recv() => {
                 if let Some(command) = command_opt {
-                    if console::process_command(to_console.clone(), to_network.clone(), &mut world, command, tick_times_saved, last_tick_time).await? {
+                    if console::process_command(to_console.clone(), to_network.clone(), &mut world, command, tick_times_saved, last_tick_time, phys_last_tick_time).await? {
                         break;
                     }
                 }
