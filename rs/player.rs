@@ -40,6 +40,7 @@ pub struct Player {
     pub do_jump: bool,
 }
 
+#[derive(Clone, Copy)]
 pub struct Surrounding {
     pub top_left: BlockPos,
     pub top_center: BlockPos,
@@ -87,7 +88,7 @@ impl Player {
         })
     }
 
-    pub fn do_collision(mut self, surrounding: &Surrounding) -> (Self, bool) {
+    pub fn do_collision(mut self, surrounding: Surrounding) -> (Self, bool) {
         // bottom corner
         let (snap_x, snap_y) = (self.x.round(), self.y.round());
 
@@ -137,7 +138,7 @@ impl Player {
         (self, has_changed)
     }
 
-    fn is_grounded(y: f32, surrounding: &Surrounding) -> bool {
+    fn is_grounded(y: f32, surrounding: Surrounding) -> bool {
         let Surrounding {
             bottom_left,
             bottom_center,
@@ -148,33 +149,37 @@ impl Player {
             && y.round() == y
     }
 
-    pub fn do_fall(mut self, surrounding: &Surrounding) -> Self {
-        if !Self::is_grounded(self.y, surrounding) {
-            self.velocity.y = self.velocity.y.max(-constants::TERMINAL_VELOCITY);
-            self.y += self.velocity.y;
-            self.acceleration.y -= constants::G;
-        } else {
-            (self.velocity.y, self.acceleration.y) = (0.0, 0.0);
+    pub fn do_fall(mut self, surrounding: Surrounding) -> Self {
+        match !Self::is_grounded(self.y, surrounding) {
+            true => {
+                self.velocity.y = self.velocity.y.max(-constants::TERMINAL_VELOCITY);
+                self.y += self.velocity.y;
+                self.acceleration.y -= constants::G;
+            }
+            false => {
+                (self.velocity.y, self.acceleration.y) = (0.0, 0.0);
+            }
         }
         self
     }
 
-    pub fn do_move(mut self, surrounding: &Surrounding) -> (Self, bool) {
+    pub fn do_move(mut self, surrounding: Surrounding) -> (Self, bool) {
         // jump
         if self.do_jump && Self::is_grounded(self.y, surrounding) {
             self.acceleration.y = constants::INITIAL_JUMP_ACCEL;
             self.velocity.y = constants::INITIAL_JUMP_SPEED;
             self.y += self.velocity.y;
-            self.do_jump = false;
         }
+        self.do_jump = false;
 
-        if !self.acceleration.is_zero() || !self.velocity.is_zero() {
-            self.velocity = self.velocity.accelerate(self.acceleration);
-            self.x += self.velocity.x;
-            self = self.do_fall(surrounding);
-            (self, true)
-        } else {
-            (self, false)
+        match self.velocity.is_zero() && self.acceleration.is_zero() {
+            true => (self, false),
+            false => {
+                self.velocity = self.velocity.accelerate(self.acceleration);
+                self.x += self.velocity.x;
+                self = self.do_fall(surrounding);
+                (self, true)
+            }
         }
     }
 }

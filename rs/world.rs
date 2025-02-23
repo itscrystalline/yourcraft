@@ -9,9 +9,10 @@ use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::iter::zip;
+use std::net::SocketAddr;
 use std::num::NonZeroU32;
 use std::ops::Range;
 use std::time::{Duration, Instant};
@@ -41,6 +42,13 @@ pub enum WorldError {
 }
 
 #[derive(Debug)]
+struct PositionUpdate {
+    pos_x: f32,
+    pos_y: f32,
+    recievers: Vec<SocketAddr>,
+}
+
+#[derive(Debug)]
 pub struct World {
     pub width: u32,
     pub height: u32,
@@ -50,6 +58,7 @@ pub struct World {
     height_chunks: u32,
     pub players: Vec<ClientConnection>,
     player_loaded: Vec<Vec<u32>>,
+    physics_update_queue: HashMap<u32, PositionUpdate>,
     to_update: HashSet<(u32, u32, Block)>,
     pub spawn_point: u32,
     pub spawn_range: NonZeroU32,
@@ -234,6 +243,7 @@ impl World {
                 players: vec![],
                 player_loaded,
                 to_update: HashSet::new(),
+                physics_update_queue: HashMap::new(),
                 spawn_point,
                 spawn_range,
             })
@@ -570,7 +580,6 @@ impl World {
         for player in players_loading {
             encode_and_send!(
                 to_network,
-                to_console,
                 PacketTypes::ServerUpdateBlock {
                     block: block.into(),
                     x: pos_x,
@@ -597,7 +606,6 @@ impl World {
         for player in &mut self.players {
             encode_and_send!(
                 to_network,
-                to_console,
                 PacketTypes::ServerKick {
                     msg: kick_msg.clone()
                 },
@@ -645,7 +653,6 @@ impl World {
 
                 encode_and_send!(
                     to_network,
-                    to_console,
                     PacketTypes::ServerKick {
                         msg: kick_msg.into(),
                     },
@@ -656,7 +663,6 @@ impl World {
                     if players_loading_chunk.contains(&player) {
                         encode_and_send!(
                             to_network,
-                            to_console,
                             PacketTypes::ServerPlayerLeaveLoaded {
                                 player_name: connection.name.clone(),
                                 player_id: connection.id,
@@ -666,7 +672,6 @@ impl World {
                     }
                     encode_and_send!(
                         to_network,
-                        to_console,
                         PacketTypes::ServerPlayerLeave {
                             player_name: connection.name.clone(),
                             player_id: connection.id,
@@ -782,7 +787,7 @@ impl World {
             zip(&self.players, surrounding).collect();
 
         let res: Vec<(ClientConnection, bool, (f32, f32))> = player_surrounding
-            .par_iter()
+            .into_par_iter()
             .map(|(conn, surr)| {
                 let mut new_player = conn.server_player.clone();
                 let old_pos = (new_player.x, new_player.y);
@@ -836,7 +841,6 @@ impl World {
                 for conn in old_players {
                     encode_and_send!(
                         to_network,
-                        to_console,
                         PacketTypes::ServerPlayerLeaveLoaded {
                             player_id: new_player.id,
                             player_name: new_player.name.clone(),
@@ -844,11 +848,11 @@ impl World {
                         conn.addr
                     );
                 }
+                let mut update_queue: Vec<SocketAddr> = Vec::new();
                 for conn in players_loading_chunk {
                     if new_players.contains(&conn) {
                         encode_and_send!(
                             to_network,
-                            to_console,
                             PacketTypes::ServerPlayerEnterLoaded {
                                 player_id: new_player.id,
                                 player_name: new_player.name.clone(),
@@ -858,32 +862,48 @@ impl World {
                             conn.addr
                         );
                     }
-                    encode_and_send!(
-                        to_network,
-                        to_console,
-                        PacketTypes::ServerPlayerUpdatePos {
-                            player_id: new_player.id,
-                            pos_x: new_player.server_player.x,
-                            pos_y: new_player.server_player.y,
-                        },
-                        conn.addr
-                    );
+                    update_queue.push(conn.addr);
                 }
-                encode_and_send!(
-                    to_network,
-                    to_console,
-                    PacketTypes::ServerPlayerUpdatePos {
-                        player_id: new_player.id,
+                update_queue.push(new_player.addr);
+                self.physics_update_queue.insert(
+                    new_player.id,
+                    PositionUpdate {
                         pos_x: new_player.server_player.x,
                         pos_y: new_player.server_player.y,
+                        recievers: update_queue,
                     },
-                    new_player.addr
                 );
             }
             new_players.push(new_player);
         }
         self.players = new_players;
         Ok(now.elapsed())
+    }
+
+    pub async fn flush_physics_queue(&mut self, to_network: ToNetwork) -> io::Result<()> {
+        self.physics_update_queue.iter().for_each(
+            |(
+                &player_id,
+                &PositionUpdate {
+                    pos_x,
+                    pos_y,
+                    ref recievers,
+                },
+            )| {
+                recievers.iter().for_each(|&reciever| {
+                    encode_and_send!(
+                        to_network,
+                        PacketTypes::ServerPlayerUpdatePos {
+                            player_id,
+                            pos_x,
+                            pos_y,
+                        },
+                        reciever
+                    );
+                });
+            },
+        );
+        Ok(())
     }
 
     pub async fn world_tick(

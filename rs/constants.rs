@@ -1,7 +1,10 @@
 pub const HITBOX_WIDTH: u32 = 1;
 pub const HITBOX_HEIGHT: u32 = 2;
 pub const TICKS_PER_SECOND: u64 = 30;
-pub const PHYS_TICKS_PER_SECOND: u64 = 60;
+/// How many times physics are calculated per second.
+pub const PHYS_TICKS_PER_SECOND: u64 = 125;
+/// How many movement updates are send per second.
+pub const PHYS_UPDATES_PER_SECOND: u64 = 25;
 pub const CONSOLE_UPDATE_RATE_MS: u64 = 50;
 pub const SECONDS_BETWEEN_HEARTBEATS: u64 = 10;
 /// unit: units / tick^2

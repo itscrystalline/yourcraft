@@ -656,7 +656,6 @@ pub async fn process_command(
                 for conn in old_players {
                     encode_and_send!(
                         to_network,
-                        to_console,
                         PacketTypes::ServerPlayerLeaveLoaded {
                             player_id: new_player.id,
                             player_name: new_player.name.clone(),
@@ -668,7 +667,6 @@ pub async fn process_command(
                     if new_players.contains(&conn) {
                         encode_and_send!(
                             to_network,
-                            to_console,
                             PacketTypes::ServerPlayerEnterLoaded {
                                 player_id: new_player.id,
                                 player_name: new_player.name.clone(),
@@ -680,7 +678,6 @@ pub async fn process_command(
                     }
                     encode_and_send!(
                         to_network,
-                        to_console,
                         PacketTypes::ServerPlayerUpdatePos {
                             player_id: new_player.id,
                             pos_x: new_player.server_player.x,
@@ -691,7 +688,6 @@ pub async fn process_command(
                 }
                 encode_and_send!(
                     to_network,
-                    to_console,
                     PacketTypes::ServerPlayerUpdatePos {
                         player_id: new_player.id,
                         pos_x: new_player.server_player.x,

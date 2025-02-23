@@ -120,6 +120,9 @@ async fn main() -> io::Result<()> {
     let mut physics_tick = time::interval(Duration::from_millis(
         1000 / constants::PHYS_TICKS_PER_SECOND,
     ));
+    let mut physics_update_tick = time::interval(Duration::from_millis(
+        1000 / constants::PHYS_UPDATES_PER_SECOND,
+    ));
     let mut heartbeat_tick =
         time::interval(Duration::from_secs(constants::SECONDS_BETWEEN_HEARTBEATS));
     let mut uptime_clock = time::interval(Duration::from_secs(1));
@@ -167,9 +170,8 @@ async fn main() -> io::Result<()> {
             packet_maybe = from_network.recv() => {
                 // hopefully will fix windows bullshit
                 if let Some((addr, packet)) = packet_maybe {
-                    network::process_client_packet(to_console.clone(), to_network.clone(),packet, addr , &mut world).await?;
+                    network::process_client_packet(to_console.clone(), to_network.clone(), packet, addr, &mut world).await?;
                 }
-
             }
             _ = heartbeat_tick.tick() => {
                 if !settings.no_heartbeat {
@@ -178,6 +180,9 @@ async fn main() -> io::Result<()> {
             }
             _ = physics_tick.tick() => {
                 phys_last_tick_time = world.physics_tick(to_network.clone()).await?;
+            }
+            _ = physics_update_tick.tick() => {
+                world.flush_physics_queue(to_network.clone()).await?;
             }
             _ = world_tick.tick() => {
                 last_tick_time = world.world_tick(to_console.clone(), to_network.clone()).await?;

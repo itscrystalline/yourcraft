@@ -27,7 +27,7 @@ pub struct ClientConnection {
     pub connection_alive: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Hash, PartialEq)]
 pub struct NetworkChunk {
     pub size: u32,
     pub chunk_x: u32,
@@ -82,7 +82,7 @@ macro_rules! define_packets {
             }
         ),* $(,)?
     ) => {
-        #[derive(Serialize, Deserialize, Debug, Clone)]
+        #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
         #[repr(u8)]
         pub enum PacketTypes {
             $($name {$($field_name: $field_type),*}),*
@@ -169,7 +169,7 @@ define_packets!(
 
 #[macro_export]
 macro_rules! encode_and_send {
-    ($to_network: expr, $to_console: expr, $packet: expr, $addr: expr) => {
+    ($to_network: expr, $packet: expr, $addr: expr) => {
         let encoded = $packet.to_bytes().unwrap();
         let _ = $to_network.send($crate::network::NetworkThreadMessage::Packet(
             $addr, encoded,
@@ -269,12 +269,7 @@ pub async fn heartbeat(
     let mut inactive: Vec<u32> = vec![];
     for player in world.players.iter_mut() {
         if player.connection_alive {
-            encode_and_send!(
-                to_network,
-                to_console,
-                PacketTypes::ServerHeartbeat {},
-                player.addr
-            );
+            encode_and_send!(to_network, PacketTypes::ServerHeartbeat {}, player.addr);
             player.connection_alive = false;
         } else {
             inactive.push(player.id);
@@ -341,7 +336,6 @@ pub async fn process_client_packet(
 
             encode_and_send!(
                 to_network,
-                to_console,
                 PacketTypes::ServerSync {
                     player_id: connection.id,
                     world_width: world.width,
@@ -364,7 +358,6 @@ pub async fn process_client_packet(
             for player in world.players.iter() {
                 encode_and_send!(
                     to_network,
-                    to_console,
                     PacketTypes::ServerPlayerJoin {
                         player_name: connection.name.clone(),
                         player_id: connection.id,
@@ -374,7 +367,6 @@ pub async fn process_client_packet(
                 if players_loading_chunk.contains(&player) {
                     encode_and_send!(
                         to_network,
-                        to_console,
                         PacketTypes::ServerPlayerEnterLoaded {
                             player_name: connection.name.clone(),
                             player_id: connection.id,
@@ -426,7 +418,6 @@ pub async fn process_client_packet(
                     for player in world.players.iter() {
                         encode_and_send!(
                             to_network,
-                            to_console,
                             PacketTypes::ServerPlayerLeave {
                                 player_name: connection.name.clone(),
                                 player_id: connection.id,
@@ -436,7 +427,6 @@ pub async fn process_client_packet(
                         if players_loading_chunk.contains(&player) {
                             encode_and_send!(
                                 to_network,
-                                to_console,
                                 PacketTypes::ServerPlayerLeaveLoaded {
                                     player_name: connection.name.clone(),
                                     player_id: connection.id,
@@ -499,7 +489,6 @@ pub async fn process_client_packet(
                     Ok(chunk) => {
                         encode_and_send!(
                             to_network,
-                            to_console,
                             PacketTypes::ServerChunkResponse {
                                 chunk: chunk.clone().into(),
                             },
