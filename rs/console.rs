@@ -12,6 +12,7 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIter
 use rayon::prelude::*;
 use std::{
     io,
+    net::SocketAddr,
     num::{NonZeroU32, ParseFloatError, ParseIntError},
     str::FromStr,
 };
@@ -27,7 +28,7 @@ use crate::{
     constants,
     network::{ClientConnection, PacketTypes, ToNetwork},
     player::{Acceleration, Velocity},
-    world::{self, BlockPos, World},
+    world::{self, BlockPos, PositionUpdate, World},
 };
 use tokio::time::Duration;
 
@@ -676,6 +677,7 @@ pub async fn process_command(
                         conn.addr
                     );
                 }
+                let mut update_queue: Vec<SocketAddr> = Vec::new();
                 for conn in players_loading_new_chunk {
                     if new_players.contains(&conn) {
                         encode_and_send!(
@@ -689,24 +691,16 @@ pub async fn process_command(
                             conn.addr
                         );
                     }
-                    encode_and_send!(
-                        to_network,
-                        PacketTypes::ServerPlayerUpdatePos {
-                            player_id: new_player.id,
-                            pos_x: new_player.server_player.x,
-                            pos_y: new_player.server_player.y,
-                        },
-                        conn.addr
-                    );
+                    update_queue.push(conn.addr);
                 }
-                encode_and_send!(
-                    to_network,
-                    PacketTypes::ServerPlayerUpdatePos {
-                        player_id: new_player.id,
+                update_queue.push(new_player.addr);
+                world.physics_update_queue.insert(
+                    new_player.id,
+                    PositionUpdate {
                         pos_x: new_player.server_player.x,
                         pos_y: new_player.server_player.y,
+                        recievers: update_queue,
                     },
-                    new_player.addr
                 );
                 c_info!(
                     to_console,

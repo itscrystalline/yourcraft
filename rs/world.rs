@@ -42,10 +42,10 @@ pub enum WorldError {
 }
 
 #[derive(Debug)]
-struct PositionUpdate {
-    pos_x: f32,
-    pos_y: f32,
-    recievers: Vec<SocketAddr>,
+pub struct PositionUpdate {
+    pub pos_x: f32,
+    pub pos_y: f32,
+    pub recievers: Vec<SocketAddr>,
 }
 
 #[derive(Debug)]
@@ -58,7 +58,7 @@ pub struct World {
     height_chunks: u32,
     pub players: Vec<ClientConnection>,
     player_loaded: Vec<Vec<u32>>,
-    physics_update_queue: HashMap<u32, PositionUpdate>,
+    pub physics_update_queue: HashMap<u32, PositionUpdate>,
     to_update: HashSet<(u32, u32, Block)>,
     pub spawn_point: u32,
     pub spawn_range: NonZeroU32,
@@ -778,39 +778,35 @@ impl World {
     }
 
     pub fn get_neighbours_of_player(&self, player: &Player) -> Surrounding {
-        macro_rules! get_or_air {
-            ($world: expr, $x: expr, $y: expr) => {
-                match $world.get_block($x, $y) {
-                    Ok(bl) => bl,
-                    Err(_) => Block::Air,
-                }
-            };
-        }
-        let (grid_x, grid_y) = (player.x.round() as u32, player.y.round() as u32);
-        let (hitbox_width, hitbox_height) = (player.hitbox_width, player.hitbox_height);
+        let (grid_x, grid_y) = (player.x.round() as i32, player.y.round() as i32);
+        let (hitbox_width, hitbox_height) =
+            (player.hitbox_width as i32, player.hitbox_height as i32);
 
         let positions = [
-            (grid_x.saturating_sub(1), grid_y + hitbox_height),
+            (grid_x - 1, grid_y + hitbox_height),
             (grid_x, grid_y + hitbox_height),
             (grid_x + hitbox_width, grid_y + hitbox_height),
-            (grid_x.saturating_sub(1), grid_y + (hitbox_height / 2)),
+            (grid_x - 1, grid_y + (hitbox_height / 2)),
             (grid_x, grid_y + (hitbox_height / 2)),
             (grid_x + hitbox_width, grid_y + (hitbox_height / 2)),
-            (grid_x.saturating_sub(1), grid_y),
+            (grid_x - 1, grid_y),
             (grid_x, grid_y),
             (grid_x + hitbox_width, grid_y),
-            (grid_x.saturating_sub(1), grid_y.saturating_sub(1)),
-            (grid_x, grid_y.saturating_sub(1)),
-            (grid_x + hitbox_width, grid_y.saturating_sub(1)),
+            (grid_x - 1, grid_y - 1),
+            (grid_x, grid_y - 1),
+            (grid_x + hitbox_width, grid_y - 1),
         ];
 
-        let block_pos_vec: Vec<BlockPos> = positions
-            .iter()
-            .map(|&(x, y)| {
-                let bl = get_or_air!(self, x, y);
-                (x, y, bl)
-            })
-            .collect();
+        let block_pos_vec = positions.map(|(x, y)| {
+            if x < 0 || y < 0 {
+                None
+            } else {
+                match self.get_block(x as u32, y as u32) {
+                    Ok(bl) => Some((x as u32, y as u32, bl)),
+                    Err(_) => None,
+                }
+            }
+        });
         Surrounding::from(block_pos_vec.as_slice())
     }
 

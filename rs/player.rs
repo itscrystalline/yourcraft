@@ -42,21 +42,21 @@ pub struct Player {
 
 #[derive(Clone, Copy)]
 pub struct Surrounding {
-    pub top_left: BlockPos,
-    pub top_center: BlockPos,
-    pub top_right: BlockPos,
-    pub left_up: BlockPos,
-    pub upper_body: BlockPos,
-    pub right_up: BlockPos,
-    pub left_down: BlockPos,
-    pub lower_body: BlockPos,
-    pub right_down: BlockPos,
-    pub bottom_left: BlockPos,
-    pub bottom_center: BlockPos,
-    pub bottom_right: BlockPos,
+    pub top_left: Option<BlockPos>,
+    pub top_center: Option<BlockPos>,
+    pub top_right: Option<BlockPos>,
+    pub left_up: Option<BlockPos>,
+    pub upper_body: Option<BlockPos>,
+    pub right_up: Option<BlockPos>,
+    pub left_down: Option<BlockPos>,
+    pub lower_body: Option<BlockPos>,
+    pub right_down: Option<BlockPos>,
+    pub bottom_left: Option<BlockPos>,
+    pub bottom_center: Option<BlockPos>,
+    pub bottom_right: Option<BlockPos>,
 }
-impl From<&[BlockPos]> for Surrounding {
-    fn from(v: &[BlockPos]) -> Self {
+impl From<&[Option<BlockPos>]> for Surrounding {
+    fn from(v: &[Option<BlockPos>]) -> Self {
         Self {
             top_left: v[0],
             top_center: v[1],
@@ -109,27 +109,40 @@ impl Player {
             right_down,
             ..
         } = surrounding;
+        let [top_center_solid, bottom_center_solid, left_up_solid, left_down_solid, right_up_solid, right_down_solid] =
+            [
+                top_center,
+                bottom_center,
+                left_up,
+                left_down,
+                right_up,
+                right_down,
+            ]
+            .map(|opt| match opt {
+                None => false,
+                Some((_, _, block)) => is_solid(block),
+            });
 
         let mut has_changed = false;
 
         if self.y != snap_y {
-            if is_solid(bottom_center.2) && self.velocity.y < 0.0 {
+            if bottom_center_solid && self.velocity.y < 0.0 {
                 self.y = snap_y;
                 has_changed = true;
             }
 
-            if is_solid(top_center.2) && self.velocity.y > 0.0 {
+            if top_center_solid && self.velocity.y > 0.0 {
                 self.y = snap_y;
                 has_changed = true;
             }
         }
         if self.x != snap_x {
-            if (is_solid(left_up.2) || is_solid(left_down.2)) && moving_left {
+            if (left_up_solid || left_down_solid) && moving_left {
                 self.x = snap_x;
                 has_changed = true;
             }
 
-            if (is_solid(right_up.2) || is_solid(right_down.2)) && moving_right {
+            if (right_up_solid || right_down_solid) && moving_right {
                 self.x = snap_x;
                 has_changed = true;
             }
@@ -145,8 +158,13 @@ impl Player {
             bottom_right,
             ..
         } = surrounding;
-        (is_solid(bottom_left.2) || is_solid(bottom_center.2) || is_solid(bottom_right.2))
-            && y.round() == y
+
+        let [bottom_left_solid, bottom_center_solid, bottom_right_solid] =
+            [bottom_left, bottom_center, bottom_right].map(|opt| match opt {
+                None => false,
+                Some((_, _, block)) => is_solid(block),
+            });
+        (bottom_left_solid || bottom_center_solid || bottom_right_solid) && y.round() == y
     }
 
     pub fn do_fall(mut self, surrounding: Surrounding) -> Self {
@@ -172,12 +190,12 @@ impl Player {
         }
         self.do_jump = false;
 
+        self = self.do_fall(surrounding);
         match self.velocity.is_zero() && self.acceleration.is_zero() {
             true => (self, false),
             false => {
                 self.velocity = self.velocity.accelerate(self.acceleration);
                 self.x += self.velocity.x;
-                self = self.do_fall(surrounding);
                 (self, true)
             }
         }
