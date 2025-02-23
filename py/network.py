@@ -37,7 +37,10 @@ class ServerConnection:
 
     def recv(self):
         packet = pickle.loads(self.socket.recv(1024*16))
-        return {"t": next(iter(packet.keys())), "data": next(iter(packet.values()))}
+        return {
+            "t": next(iter(packet.keys())),
+            "data": next(iter(packet.values()))
+        }
 
 
 class ClientHello(Packet):

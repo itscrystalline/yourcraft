@@ -64,6 +64,13 @@ pub struct World {
     pub spawn_range: NonZeroU32,
 }
 
+struct SurroundingBlocks {
+    top: Option<BlockPos>,
+    bottom: Option<BlockPos>,
+    left: Option<BlockPos>,
+    right: Option<BlockPos>,
+}
+
 #[derive(Debug, Clone)]
 pub struct Chunk {
     pub size: u32,
@@ -530,26 +537,50 @@ impl World {
         Ok(())
     }
 
-    fn get_water_neighbours(x: u32, y: u32) -> [(u32, u32); 3] {
-        [
-            (x, y.saturating_sub(1)),
-            (x.saturating_sub(1), y),
-            (x + 1, y),
+    fn get_neighbours(&self, x: u32, y: u32) -> SurroundingBlocks {
+        let (x_i, y_i) = (x as i32, y as i32);
+        let [top, bottom, left, right] = [
+            (x_i, y_i + 1),
+            (x_i, y_i - 1),
+            (x_i - 1, y_i),
+            (x_i + 1, y_i),
         ]
+        .map(|(bl_x, bl_y)| {
+            if bl_x < 0 || bl_y < 0 {
+                None
+            } else {
+                match self.get_block(bl_x as u32, bl_y as u32) {
+                    Ok(bl) => Some((bl_x as u32, bl_y as u32, bl)),
+                    Err(_) => None,
+                }
+            }
+        });
+        SurroundingBlocks {
+            top,
+            bottom,
+            left,
+            right,
+        }
     }
 
     pub fn set_block(&mut self, pos_x: u32, pos_y: u32, block: Block) -> Result<(), WorldError> {
         self.raw_set_block(pos_x, pos_y, block)?;
         // update block
         if block == Block::Water {
-            let neighbours = World::get_water_neighbours(pos_x, pos_y);
-            for (x, y) in neighbours {
-                if let Ok(bl) = self.get_block(x, y) {
+            let SurroundingBlocks {
+                bottom,
+                left,
+                right,
+                ..
+            } = self.get_neighbours(pos_x, pos_y);
+            [bottom, left, right]
+                .into_iter()
+                .flatten()
+                .for_each(|(x, y, bl)| {
                     if !is_solid(bl) && bl != Block::Water {
                         self.to_update.insert((x, y, Block::Water));
                     }
-                }
-            }
+                });
         }
         Ok(())
     }
@@ -577,7 +608,7 @@ impl World {
         let (chunk_x, chunk_y) = self.get_chunk_block_is_in(pos_x, pos_y)?;
         let players_loading = self.get_list_of_players_loading_chunk(chunk_x, chunk_y)?;
 
-        for player in players_loading {
+        players_loading.into_iter().for_each(|player| {
             encode_and_send!(
                 to_network,
                 PacketTypes::ServerUpdateBlock {
@@ -587,7 +618,7 @@ impl World {
                 },
                 player.addr
             );
-        }
+        });
 
         Ok(())
     }
@@ -603,7 +634,7 @@ impl World {
             .par_iter_mut()
             .for_each(|chunk| chunk.clear());
 
-        for player in &mut self.players {
+        self.players.iter_mut().for_each(|player| {
             encode_and_send!(
                 to_network,
                 PacketTypes::ServerKick {
@@ -611,7 +642,7 @@ impl World {
                 },
                 player.addr
             );
-        }
+        });
         self.players.clear();
         Ok(())
     }
@@ -720,11 +751,19 @@ impl World {
 
         let to_update: HashSet<(u32, u32)> = water_to_update
             .par_iter()
-            .flat_map(|(x, y, _)| World::get_water_neighbours(*x, *y))
-            .filter_map(|(bl_pos_x, bl_pos_y)| {
-                if let Ok(bl) = self.get_block(bl_pos_x, bl_pos_y) {
+            .flat_map(|&&(x, y, _)| {
+                let SurroundingBlocks {
+                    bottom,
+                    left,
+                    right,
+                    ..
+                } = self.get_neighbours(x, y);
+                [bottom, left, right]
+            })
+            .filter_map(|maybe_block| {
+                if let Some((bl_x, bl_y, bl)) = maybe_block {
                     if !is_solid(bl) && bl != Block::Water {
-                        return Some((bl_pos_x, bl_pos_y));
+                        return Some((bl_x, bl_y));
                     }
                 }
                 None

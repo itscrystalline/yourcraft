@@ -41,7 +41,7 @@ impl From<Chunk> for NetworkChunk {
             size: chunk.size,
             chunk_x: chunk.chunk_x,
             chunk_y: chunk.chunk_y,
-            blocks: chunk.blocks.par_iter().map(|&bl| bl.into()).collect(),
+            blocks: chunk.blocks.into_par_iter().map(|bl| bl.into()).collect(),
         }
     }
 }
@@ -63,47 +63,24 @@ impl ClientConnection {
         x: u32,
         name: String,
     ) -> Result<ClientConnection, WorldError> {
-        let mut rng = rand::rng();
         Ok(ClientConnection {
             addr,
             name,
             server_player: Player::spawn_at(world, x)?,
-            id: rng.next_u32(),
+            id: rand::rng().next_u32(),
             connection_alive: true,
         })
     }
 }
 
-macro_rules! define_packets {
-    (
-        $(
-            $name:ident = $value:expr => {
-                $($field_name:ident: $field_type:ty),* $(,)?
-            }
-        ),* $(,)?
-    ) => {
-        #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-        #[repr(u8)]
-        pub enum PacketTypes {
-            $($name {$($field_name: $field_type),*}),*
-        }
-
-        impl From<PacketTypes> for u8 {
-            fn from(packet: PacketTypes) -> u8 {
-                match packet {
-                    $(PacketTypes::$name { .. } => $value),*,
-                }
-            }
-        }
-    };
-}
-
 // Use the macro to define packets
-define_packets!(
-    ClientHello = 1 => {
-        name: String
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[repr(u8)]
+pub enum PacketTypes {
+    ClientHello {
+        name: String,
     },
-    ServerSync = 2 => {
+    ServerSync {
         player_id: u32,
         world_width: u32,
         world_height: u32,
@@ -111,61 +88,61 @@ define_packets!(
         spawn_x: f32,
         spawn_y: f32,
     },
-    ClientRequestChunk = 3 => {
+    ClientRequestChunk {
         chunk_coords_x: u32,
         chunk_coords_y: u32,
     },
-    ServerChunkResponse = 4 => {
+    ServerChunkResponse {
         chunk: NetworkChunk,
     },
-    ClientUnloadChunk = 5 => {
+    ClientUnloadChunk {
         chunk_coords_x: u32,
         chunk_coords_y: u32,
     },
-    ServerPlayerJoin = 6 => {
+    ServerPlayerJoin {
         player_name: String,
-        player_id: u32
+        player_id: u32,
     },
-    ServerPlayerEnterLoaded = 7 => {
+    ServerPlayerEnterLoaded {
         player_name: String,
         player_id: u32,
         pos_x: f32,
         pos_y: f32,
     },
-    ServerPlayerLeaveLoaded = 8 => {
+    ServerPlayerLeaveLoaded {
         player_name: String,
-        player_id: u32
+        player_id: u32,
     },
-    ServerPlayerLeave = 9 => {
+    ServerPlayerLeave {
         player_name: String,
-        player_id: u32
+        player_id: u32,
     },
-    ClientGoodbye = 10 => {},
-    ClientPlaceBlock = 11 => {
+    ClientGoodbye {},
+    ClientPlaceBlock {
         block: u8,
         x: u32,
-        y: u32
+        y: u32,
     },
-    ServerUpdateBlock = 12 => {
+    ServerUpdateBlock {
         block: u8,
         x: u32,
-        y: u32
+        y: u32,
     },
-    ClientPlayerXVelocity = 13 => {
-        vel_x: f32
+    ClientPlayerXVelocity {
+        vel_x: f32,
     },
-    ClientPlayerJump = 14 => {},
-    ServerPlayerUpdatePos = 15 => {
+    ClientPlayerJump {},
+    ServerPlayerUpdatePos {
         player_id: u32,
         pos_x: f32,
-        pos_y: f32
+        pos_y: f32,
     },
-    ServerKick = 16 => {
-        msg: String
+    ServerKick {
+        msg: String,
     },
-    ServerHeartbeat = 17 => {},
-    ClientHeartbeat = 18 => {}
-);
+    ServerHeartbeat {},
+    ClientHeartbeat {},
+}
 
 #[macro_export]
 macro_rules! encode_and_send {
