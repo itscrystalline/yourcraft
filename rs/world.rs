@@ -1,28 +1,23 @@
 use crate::console::ToConsole;
-use crate::network::{
-    ClientConnection, PacketTypes, ServerKick, ServerPlayerEnterLoaded, ServerPlayerUpdatePos,
-    ServerUpdateBlock,
-};
-use crate::network::{Packet, ServerPlayerLeave, ServerPlayerLeaveLoaded};
-use crate::player::Player;
+use crate::network::{ClientConnection, PacketTypes, ToNetwork};
+use crate::player::{Player, Surrounding};
 use crate::{c_debug, c_error, c_info, WorldType};
 use fast_poisson::Poisson;
-use get_size::GetSize;
 use itertools::Itertools;
-use noise::{NoiseFn, OpenSimplex, Perlin, Seedable, Worley};
+use noise::{NoiseFn, OpenSimplex, Perlin};
 use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::iter::zip;
+use std::net::SocketAddr;
 use std::num::NonZeroU32;
-use std::ops::{AddAssign, Neg, Range};
+use std::ops::Range;
 use std::time::{Duration, Instant};
 use strum::EnumString;
 use thiserror::Error;
-use tokio::net::UdpSocket;
 
 #[derive(Debug, Error)]
 pub enum WorldError {
@@ -47,6 +42,13 @@ pub enum WorldError {
 }
 
 #[derive(Debug)]
+pub struct PositionUpdate {
+    pub pos_x: f32,
+    pub pos_y: f32,
+    pub recievers: Vec<SocketAddr>,
+}
+
+#[derive(Debug)]
 pub struct World {
     pub width: u32,
     pub height: u32,
@@ -56,9 +58,17 @@ pub struct World {
     height_chunks: u32,
     pub players: Vec<ClientConnection>,
     player_loaded: Vec<Vec<u32>>,
+    pub physics_update_queue: HashMap<u32, PositionUpdate>,
     to_update: HashSet<(u32, u32, Block)>,
     pub spawn_point: u32,
     pub spawn_range: NonZeroU32,
+}
+
+struct SurroundingBlocks {
+    top: Option<BlockPos>,
+    bottom: Option<BlockPos>,
+    left: Option<BlockPos>,
+    right: Option<BlockPos>,
 }
 
 #[derive(Debug, Clone)]
@@ -111,44 +121,43 @@ struct TerrainSettings {
     tree_spawn_radius: f64,
 }
 
-#[derive(Default, Debug)]
-struct AngleDeg(f64);
-
-impl AddAssign for AngleDeg {
-    fn add_assign(&mut self, rhs: Self) {
-        self.0 += rhs.0;
-        self.0 %= 360.0;
-    }
+enum TreeTypes {
+    Basic,
 }
-impl Neg for AngleDeg {
-    type Output = Self;
-    fn neg(self) -> Self::Output {
-        Self(360.0 - self.0)
-    }
+macro_rules! map_to_trunk {
+    ($trunk_x: expr, $trunk_y: expr, $trunk_offset: expr, $spaces: expr) => {
+        $spaces
+            .into_iter()
+            .map(|(x, y, block)| {
+                (
+                    (x + $trunk_x as i32) as u32,
+                    (y + $trunk_y as i32) as u32,
+                    block,
+                )
+            })
+            .collect()
+    };
 }
-impl From<f64> for AngleDeg {
-    fn from(value: f64) -> Self {
-        let mut value = value;
-        if !(-360.0..360.0).contains(&value) {
-            value %= 360.0;
-        }
-        if value < 0.0 {
-            value += 360.0;
-        }
-        Self(value)
-    }
-}
-impl From<AngleDeg> for f64 {
-    fn from(value: AngleDeg) -> Self {
-        value.0
-    }
-}
-impl PartialEq for AngleDeg {
-    fn eq(&self, other: &Self) -> bool {
-        if (self.0 == 0.0 && other.0 == 360.0) || (self.0 == 360.0 && other.0 == 0.0) {
-            true
-        } else {
-            self.0 == other.0
+impl TreeTypes {
+    pub fn get_required_blocks(tree: TreeTypes, trunk_x: u32, trunk_y: u32) -> Vec<BlockPos> {
+        match tree {
+            TreeTypes::Basic => {
+                let layout = vec![
+                    (0, 5, Block::Leaves),
+                    (-1, 4, Block::Leaves),
+                    (0, 4, Block::Leaves),
+                    (1, 4, Block::Leaves),
+                    (-2, 3, Block::Leaves),
+                    (-1, 3, Block::Leaves),
+                    (0, 3, Block::Wood),
+                    (1, 3, Block::Leaves),
+                    (2, 3, Block::Leaves),
+                    (0, 2, Block::Wood),
+                    (0, 1, Block::Wood),
+                    (0, 0, Block::Wood),
+                ];
+                map_to_trunk!(trunk_x, trunk_y, 2, layout)
+            }
         }
     }
 }
@@ -241,6 +250,7 @@ impl World {
                 players: vec![],
                 player_loaded,
                 to_update: HashSet::new(),
+                physics_update_queue: HashMap::new(),
                 spawn_point,
                 spawn_range,
             })
@@ -280,11 +290,7 @@ impl World {
         mut world: World,
         terrain_settings: TerrainSettings,
     ) -> Result<World, WorldError> {
-        macro_rules! normalize_noise {
-            ($noise_val: expr) => {
-                $noise_val / 2.0 + 0.5
-            };
-        }
+        type TerrainGenerator = Box<dyn FnMut(f64, f64, f64) -> (f64, f64)>;
 
         let start = Instant::now();
 
@@ -303,16 +309,25 @@ impl World {
         let mut seed_generator = SmallRng::seed_from_u64(master_seed);
         let height_range = (terrain_settings.upper_height - terrain_settings.base_height) as f64;
 
-        let generators: Vec<(Perlin, f64, f64)> = (0..terrain_settings.noise_passes)
+        let mut generators: Vec<TerrainGenerator> = (0..terrain_settings.noise_passes)
             .map(|pass| {
-                (
-                    Perlin::new(seed_generator.next_u32()),
-                    1f64 / (2f64.powi(pass as i32)),
-                    2f64.powi(pass as i32),
-                )
+                let seed = seed_generator.next_u32();
+                Box::new(move |x_f, multiplier, octaves| {
+                    let perlin = Perlin::new(seed);
+                    let pass_2n = 2f64.powi(pass as i32);
+                    let noise = perlin.get([x_f * pass_2n]) / 2.0 + 0.5;
+                    let octave = 1f64 / pass_2n;
+                    (multiplier + (octave * noise), octaves + octave)
+                }) as TerrainGenerator
             })
             .collect();
-        let cave_generator = (OpenSimplex::new(seed_generator.next_u32()), 32.0);
+        let cave_generator = {
+            let seed = seed_generator.next_u32();
+            move |x, y| {
+                let simplex = OpenSimplex::new(seed);
+                simplex.get([x * 0.001 * 32.0, y * 0.001 * 32.0]).abs()
+            }
+        };
         let mut trees = Poisson::<1>::new()
             .with_seed(seed_generator.next_u64())
             .with_dimensions([world.width as f64], terrain_settings.tree_spawn_radius)
@@ -321,22 +336,16 @@ impl World {
             .unique()
             .sorted();
 
-        c_debug!(to_console, "generators: {:?}", generators);
-        c_debug!(to_console, "cave generator: {:?}", cave_generator);
         c_debug!(to_console, "trees: {trees:?}");
 
-        let (cave, cave_freq) = cave_generator;
         let mut next_tree = trees.next();
         for x in 0..world.width {
             let x_f = x as f64 * 0.005;
             let mut multiplier = 0.0;
             let mut octaves = 0.0;
-            for (generator, octave, freq) in &generators {
-                let generated = normalize_noise!(generator.get([x_f * freq]));
-                // from [-1, 1] to [0, 1]
-                multiplier += octave * generated;
-                octaves += octave;
-            }
+            generators.iter_mut().for_each(|generator| {
+                (multiplier, octaves) = generator(x_f, multiplier, octaves);
+            });
             multiplier /= octaves;
             multiplier = multiplier.powf(terrain_settings.redistribution_factor);
             let height = terrain_settings.base_height + (multiplier * height_range).round() as u32;
@@ -344,9 +353,7 @@ impl World {
             let (mut top_y, mut prev_top_y) = (0u32, 0u32);
             for y in 0..=u32::max(height, terrain_settings.water_height) {
                 let block = {
-                    let noise_here = cave
-                        .get([x as f64 * 0.001 * cave_freq, y as f64 * 0.001 * cave_freq])
-                        .abs();
+                    let noise_here = cave_generator(x as f64, y as f64);
                     if noise_here < cave_gen_size {
                         Block::Air
                     } else {
@@ -364,7 +371,9 @@ impl World {
 
             let should_place_grass = top_y > terrain_settings.water_height;
             if top_y - prev_top_y != 1 {
-                world.set_block(x, top_y, Block::Air)?;
+                if !is_solid(world.get_block(x, top_y)?) {
+                    world.set_block(x, top_y, Block::Air)?;
+                }
             } else if should_place_grass {
                 world.set_block(x, top_y, Block::Grass)?;
             }
@@ -372,7 +381,7 @@ impl World {
             if let Some(tree) = next_tree {
                 if x == tree {
                     if should_place_grass {
-                        world.generate_tree_at(x, top_y + 1)?;
+                        let _ = world.generate_tree_at(x, top_y + 1);
                     }
                     next_tree = trees.next();
                 }
@@ -389,10 +398,11 @@ impl World {
     }
 
     fn generate_tree_at(&mut self, trunk_x: u32, trunk_y: u32) -> Result<(), WorldError> {
-        for y in trunk_y..=trunk_y + 7 {
-            self.set_block(trunk_x, y, Block::Wood)?;
-        }
-        Ok(())
+        let space = TreeTypes::get_required_blocks(TreeTypes::Basic, trunk_x, trunk_y);
+        space.into_iter().try_for_each(|(x, y, block)| {
+            self.raw_set_block(x, y, block)?;
+            Ok(())
+        })
     }
 
     fn check_out_of_bounds_chunk(&self, chunk_x: u32, chunk_y: u32) -> Result<(), WorldError> {
@@ -527,26 +537,50 @@ impl World {
         Ok(())
     }
 
-    fn get_water_neighbours(x: u32, y: u32) -> [(u32, u32); 3] {
-        [
-            (x, y.saturating_sub(1)),
-            (x.saturating_sub(1), y),
-            (x + 1, y),
+    fn get_neighbours(&self, x: u32, y: u32) -> SurroundingBlocks {
+        let (x_i, y_i) = (x as i32, y as i32);
+        let [top, bottom, left, right] = [
+            (x_i, y_i + 1),
+            (x_i, y_i - 1),
+            (x_i - 1, y_i),
+            (x_i + 1, y_i),
         ]
+        .map(|(bl_x, bl_y)| {
+            if bl_x < 0 || bl_y < 0 {
+                None
+            } else {
+                match self.get_block(bl_x as u32, bl_y as u32) {
+                    Ok(bl) => Some((bl_x as u32, bl_y as u32, bl)),
+                    Err(_) => None,
+                }
+            }
+        });
+        SurroundingBlocks {
+            top,
+            bottom,
+            left,
+            right,
+        }
     }
 
     pub fn set_block(&mut self, pos_x: u32, pos_y: u32, block: Block) -> Result<(), WorldError> {
         self.raw_set_block(pos_x, pos_y, block)?;
         // update block
         if block == Block::Water {
-            let neighbours = World::get_water_neighbours(pos_x, pos_y);
-            for (x, y) in neighbours {
-                if let Ok(bl) = self.get_block(x, y) {
+            let SurroundingBlocks {
+                bottom,
+                left,
+                right,
+                ..
+            } = self.get_neighbours(pos_x, pos_y);
+            [bottom, left, right]
+                .into_iter()
+                .flatten()
+                .for_each(|(x, y, bl)| {
                     if !is_solid(bl) && bl != Block::Water {
                         self.to_update.insert((x, y, Block::Water));
                     }
-                }
-            }
+                });
         }
         Ok(())
     }
@@ -565,8 +599,7 @@ impl World {
 
     pub async fn set_block_and_notify(
         &mut self,
-        to_console: ToConsole,
-        socket: &UdpSocket,
+        to_network: ToNetwork,
         pos_x: u32,
         pos_y: u32,
         block: Block,
@@ -574,42 +607,42 @@ impl World {
         self.set_block(pos_x, pos_y, block)?;
         let (chunk_x, chunk_y) = self.get_chunk_block_is_in(pos_x, pos_y)?;
         let players_loading = self.get_list_of_players_loading_chunk(chunk_x, chunk_y)?;
-        let response = ServerUpdateBlock {
-            block: block.into(),
-            x: pos_x,
-            y: pos_y,
-        };
 
-        for player in players_loading {
+        players_loading.into_iter().for_each(|player| {
             encode_and_send!(
-                to_console,
-                PacketTypes::ServerUpdateBlock,
-                response.clone(),
-                socket,
+                to_network,
+                PacketTypes::ServerUpdateBlock {
+                    block: block.into(),
+                    x: pos_x,
+                    y: pos_y,
+                },
                 player.addr
             );
-        }
+        });
 
         Ok(())
     }
 
-    pub async fn shutdown(&mut self, to_console: ToConsole, socket: &UdpSocket) -> io::Result<()> {
+    pub async fn shutdown(
+        &mut self,
+        to_console: ToConsole,
+        to_network: ToNetwork,
+    ) -> io::Result<()> {
         c_info!(to_console, "Shutting down Server!");
         let kick_msg = String::from("Server Shutting Down!");
         self.player_loaded
             .par_iter_mut()
             .for_each(|chunk| chunk.clear());
 
-        let kick = ServerKick { msg: kick_msg };
-        for player in &mut self.players {
+        self.players.iter_mut().for_each(|player| {
             encode_and_send!(
-                to_console,
-                PacketTypes::ServerKick,
-                kick.clone(),
-                socket,
+                to_network,
+                PacketTypes::ServerKick {
+                    msg: kick_msg.clone()
+                },
                 player.addr
             );
-        }
+        });
         self.players.clear();
         Ok(())
     }
@@ -617,7 +650,7 @@ impl World {
     pub async fn kick(
         &mut self,
         to_console: ToConsole,
-        socket: &UdpSocket,
+        to_network: ToNetwork,
         id: u32,
         msg: Option<&str>,
     ) -> io::Result<()> {
@@ -649,41 +682,31 @@ impl World {
                     )
                     .unwrap();
 
-                let to_broadcast = ServerPlayerLeave {
-                    player_name: connection.name.clone(),
-                    player_id: connection.id,
-                };
-                let to_broadcast_chunk = ServerPlayerLeaveLoaded {
-                    player_name: connection.name.clone(),
-                    player_id: connection.id,
-                };
-
-                let kick = ServerKick {
-                    msg: kick_msg.into(),
-                };
                 encode_and_send!(
-                    to_console,
-                    PacketTypes::ServerKick,
-                    kick,
-                    socket,
+                    to_network,
+                    PacketTypes::ServerKick {
+                        msg: kick_msg.into(),
+                    },
                     connection.addr
                 );
 
                 for player in self.players.iter() {
                     if players_loading_chunk.contains(&player) {
                         encode_and_send!(
-                            to_console,
-                            PacketTypes::ServerPlayerLeaveLoaded,
-                            to_broadcast_chunk.clone(),
-                            socket,
+                            to_network,
+                            PacketTypes::ServerPlayerLeaveLoaded {
+                                player_name: connection.name.clone(),
+                                player_id: connection.id,
+                            },
                             player.addr
                         );
                     }
                     encode_and_send!(
-                        to_console,
-                        PacketTypes::ServerPlayerLeave,
-                        to_broadcast.clone(),
-                        socket,
+                        to_network,
+                        PacketTypes::ServerPlayerLeave {
+                            player_name: connection.name.clone(),
+                            player_id: connection.id,
+                        },
                         player.addr
                     );
                 }
@@ -719,11 +742,7 @@ impl World {
         })
     }
 
-    async fn tick_water(
-        &mut self,
-        to_console: ToConsole,
-        socket: &UdpSocket,
-    ) -> Result<(), WorldError> {
+    async fn tick_water(&mut self, to_network: ToNetwork) -> Result<(), WorldError> {
         let water_to_update: HashSet<&(u32, u32, Block)> = self
             .to_update
             .par_iter()
@@ -732,11 +751,19 @@ impl World {
 
         let to_update: HashSet<(u32, u32)> = water_to_update
             .par_iter()
-            .flat_map(|(x, y, _)| World::get_water_neighbours(*x, *y))
-            .filter_map(|(bl_pos_x, bl_pos_y)| {
-                if let Ok(bl) = self.get_block(bl_pos_x, bl_pos_y) {
+            .flat_map(|&&(x, y, _)| {
+                let SurroundingBlocks {
+                    bottom,
+                    left,
+                    right,
+                    ..
+                } = self.get_neighbours(x, y);
+                [bottom, left, right]
+            })
+            .filter_map(|maybe_block| {
+                if let Some((bl_x, bl_y, bl)) = maybe_block {
                     if !is_solid(bl) && bl != Block::Water {
-                        return Some((bl_pos_x, bl_pos_y));
+                        return Some((bl_x, bl_y));
                     }
                 }
                 None
@@ -744,164 +771,186 @@ impl World {
             .collect();
         self.to_update.retain(|pos| pos.2 != Block::Water);
         for (x, y) in to_update {
-            self.set_block_and_notify(to_console.clone(), socket, x, y, Block::Water)
+            self.set_block_and_notify(to_network.clone(), x, y, Block::Water)
                 .await?;
         }
         Ok(())
     }
 
-    pub fn get_neighbours_of_player(&self, player: &Player) -> [BlockPos; 6] {
-        macro_rules! get_or_air {
-            ($world: expr, $x: expr, $y: expr) => {
-                match $world.get_block($x, $y) {
-                    Ok(bl) => bl,
-                    Err(_) => Block::Air,
-                }
-            };
-        }
-        let (grid_x, grid_y) = (player.x.round() as u32, player.y.round() as u32);
-        let (hitbox_width, hitbox_height) = (player.hitbox_width, player.hitbox_height);
+    pub fn get_neighbours_of_player(&self, player: &Player) -> Surrounding {
+        let (grid_x, grid_y) = (player.x.round() as i32, player.y.round() as i32);
+        let (hitbox_width, hitbox_height) =
+            (player.hitbox_width as i32, player.hitbox_height as i32);
 
         let positions = [
-            (grid_x, grid_y.wrapping_sub(1)),
-            (grid_x, grid_y + 1),
-            (grid_x.wrapping_sub(1), grid_y + (hitbox_height / 2)),
-            (grid_x.wrapping_sub(1), grid_y),
+            (grid_x - 1, grid_y + hitbox_height),
+            (grid_x, grid_y + hitbox_height),
+            (grid_x + hitbox_width, grid_y + hitbox_height),
+            (grid_x - 1, grid_y + (hitbox_height / 2)),
+            (grid_x, grid_y + (hitbox_height / 2)),
             (grid_x + hitbox_width, grid_y + (hitbox_height / 2)),
+            (grid_x - 1, grid_y),
+            (grid_x, grid_y),
             (grid_x + hitbox_width, grid_y),
+            (grid_x - 1, grid_y - 1),
+            (grid_x, grid_y - 1),
+            (grid_x + hitbox_width, grid_y - 1),
         ];
 
-        let block_pos_vec: Vec<BlockPos> = positions
-            .iter()
-            .map(|&(x, y)| {
-                let bl = get_or_air!(self, x, y);
-                (x, y, bl)
-            })
-            .collect();
-        block_pos_vec.try_into().unwrap()
+        let block_pos_vec = positions.map(|(x, y)| {
+            if x < 0 || y < 0 {
+                None
+            } else {
+                match self.get_block(x as u32, y as u32) {
+                    Ok(bl) => Some((x as u32, y as u32, bl)),
+                    Err(_) => None,
+                }
+            }
+        });
+        Surrounding::from(block_pos_vec.as_slice())
     }
 
-    pub async fn tick(
-        &mut self,
-        to_console: ToConsole,
-        socket: &UdpSocket,
-    ) -> io::Result<Duration> {
+    pub async fn physics_tick(&mut self, to_network: ToNetwork) -> io::Result<Duration> {
         let now = Instant::now();
 
-        if let Err(e) = self.tick_water(to_console.clone(), socket).await {
-            c_error!(to_console, "Error occurred while ticking water: {e}")
-        };
+        let surrounding: Vec<Surrounding> = self
+            .players
+            .par_iter()
+            .map(|conn| self.get_neighbours_of_player(&conn.server_player))
+            .collect();
+        let player_surrounding: Vec<(&ClientConnection, Surrounding)> =
+            zip(&self.players, surrounding).collect();
 
-        //collision
-        {
-            let surrounding: Vec<[BlockPos; 6]> = self
-                .players
-                .par_iter()
-                .map(|conn| self.get_neighbours_of_player(&conn.server_player))
-                .collect();
-            let player_surrounding: Vec<(&ClientConnection, [BlockPos; 6])> =
-                zip(&self.players, surrounding).collect();
+        let res: Vec<(ClientConnection, bool, (f32, f32))> = player_surrounding
+            .into_par_iter()
+            .map(|(conn, surr)| {
+                let mut new_player = conn.server_player.clone();
+                let old_pos = (new_player.x, new_player.y);
+                let (has_changed_collision, has_jumped);
+                (new_player, has_jumped) = new_player.do_move(surr);
+                (new_player, has_changed_collision) = new_player.do_collision(surr);
+                (
+                    ClientConnection::with(conn, new_player),
+                    has_jumped | has_changed_collision,
+                    old_pos,
+                )
+            })
+            .collect();
 
-            let res: Vec<(ClientConnection, bool, (f32, f32))> = player_surrounding
-                .par_iter()
-                .map(|&(conn, surr)| {
-                    let mut new_player = conn.server_player.clone();
-                    let old_pos = (new_player.x, new_player.y);
-                    let (has_changed_fall, has_changed_collision);
-                    (new_player, has_changed_fall) = new_player.do_fall(surr);
-                    (new_player, has_changed_collision) = new_player.do_collision(surr);
-                    (
-                        ClientConnection::with(conn, new_player),
-                        has_changed_collision | has_changed_fall,
-                        old_pos,
+        let mut new_players = vec![];
+        for (new_player, update_pos, (old_x, old_y)) in res {
+            if update_pos {
+                let (old_chunk_x, old_chunk_y) = self
+                    .get_chunk_block_is_in(old_x.round() as u32, old_y.round() as u32)
+                    .unwrap_or((0, 0));
+                let (chunk_x, chunk_y) = self
+                    .get_chunk_block_is_in(
+                        new_player.server_player.x.round() as u32,
+                        new_player.server_player.y.round() as u32,
                     )
-                })
-                .collect();
+                    .unwrap_or((0, 0));
+                let players_loading_old_chunk: Vec<&ClientConnection> = self
+                    .get_list_of_players_loading_chunk(old_chunk_x, old_chunk_y)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|conn| conn.id != new_player.id)
+                    .collect();
+                let players_loading_chunk: Vec<&ClientConnection> = self
+                    .get_list_of_players_loading_chunk(chunk_x, chunk_y)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|conn| conn.id != new_player.id)
+                    .collect();
 
-            let mut new_players = vec![];
-            for (new_player, update_pos, (old_x, old_y)) in res {
-                if update_pos {
-                    let (old_chunk_x, old_chunk_y) = self
-                        .get_chunk_block_is_in(old_x.round() as u32, old_y.round() as u32)
-                        .unwrap_or((0, 0));
-                    let (chunk_x, chunk_y) = self
-                        .get_chunk_block_is_in(
-                            new_player.server_player.x.round() as u32,
-                            new_player.server_player.y.round() as u32,
-                        )
-                        .unwrap_or((0, 0));
-                    let players_loading_old_chunk = self
-                        .get_list_of_players_loading_chunk(old_chunk_x, old_chunk_y)
-                        .unwrap_or_default();
-                    let players_loading_chunk = self
-                        .get_list_of_players_loading_chunk(chunk_x, chunk_y)
-                        .unwrap_or_default();
+                let old_players: Vec<&ClientConnection> = players_loading_old_chunk
+                    .clone()
+                    .into_iter()
+                    .filter(|conn| !players_loading_chunk.contains(conn))
+                    .collect();
+                let new_players: Vec<&ClientConnection> = players_loading_chunk
+                    .clone()
+                    .into_iter()
+                    .filter(|conn| !players_loading_old_chunk.contains(conn))
+                    .collect();
 
-                    let old_players: Vec<&ClientConnection> = players_loading_old_chunk
-                        .clone()
-                        .into_par_iter()
-                        .filter(|conn| !players_loading_chunk.contains(conn))
-                        .collect();
-                    let new_players: Vec<&ClientConnection> = players_loading_chunk
-                        .clone()
-                        .into_par_iter()
-                        .filter(|conn| !players_loading_old_chunk.contains(conn))
-                        .collect();
-
-                    for conn in old_players {
-                        let leave_packet = ServerPlayerLeaveLoaded {
+                for conn in old_players {
+                    encode_and_send!(
+                        to_network,
+                        PacketTypes::ServerPlayerLeaveLoaded {
                             player_id: new_player.id,
                             player_name: new_player.name.clone(),
-                        };
+                        },
+                        conn.addr
+                    );
+                }
+                let mut update_queue: Vec<SocketAddr> = Vec::new();
+                for conn in players_loading_chunk {
+                    if new_players.contains(&conn) {
                         encode_and_send!(
-                            to_console,
-                            PacketTypes::ServerPlayerLeaveLoaded,
-                            leave_packet,
-                            socket,
-                            conn.addr
-                        );
-                    }
-                    let move_packet = ServerPlayerUpdatePos {
-                        player_id: new_player.id,
-                        pos_x: new_player.server_player.x,
-                        pos_y: new_player.server_player.y,
-                    };
-                    for conn in players_loading_chunk {
-                        if new_players.contains(&conn) {
-                            let enter_packet = ServerPlayerEnterLoaded {
+                            to_network,
+                            PacketTypes::ServerPlayerEnterLoaded {
                                 player_id: new_player.id,
                                 player_name: new_player.name.clone(),
                                 pos_x: new_player.server_player.x,
                                 pos_y: new_player.server_player.y,
-                            };
-                            encode_and_send!(
-                                to_console,
-                                PacketTypes::ServerPlayerEnterLoaded,
-                                enter_packet,
-                                socket,
-                                conn.addr
-                            );
-                        }
-                        encode_and_send!(
-                            to_console,
-                            PacketTypes::ServerPlayerUpdatePos,
-                            move_packet.clone(),
-                            socket,
+                            },
                             conn.addr
                         );
                     }
-                    encode_and_send!(
-                        to_console,
-                        PacketTypes::ServerPlayerUpdatePos,
-                        move_packet,
-                        socket,
-                        new_player.addr
-                    );
+                    update_queue.push(conn.addr);
                 }
-                new_players.push(new_player);
+                update_queue.push(new_player.addr);
+                self.physics_update_queue.insert(
+                    new_player.id,
+                    PositionUpdate {
+                        pos_x: new_player.server_player.x,
+                        pos_y: new_player.server_player.y,
+                        recievers: update_queue,
+                    },
+                );
             }
-            self.players = new_players;
+            new_players.push(new_player);
         }
+        self.players = new_players;
+        Ok(now.elapsed())
+    }
+
+    pub async fn flush_physics_queue(&mut self, to_network: ToNetwork) -> io::Result<()> {
+        self.physics_update_queue.iter().for_each(
+            |(
+                &player_id,
+                &PositionUpdate {
+                    pos_x,
+                    pos_y,
+                    ref recievers,
+                },
+            )| {
+                recievers.iter().for_each(|&reciever| {
+                    encode_and_send!(
+                        to_network,
+                        PacketTypes::ServerPlayerUpdatePos {
+                            player_id,
+                            pos_x,
+                            pos_y,
+                        },
+                        reciever
+                    );
+                });
+            },
+        );
+        Ok(())
+    }
+
+    pub async fn world_tick(
+        &mut self,
+        to_console: ToConsole,
+        to_network: ToNetwork,
+    ) -> io::Result<Duration> {
+        let now = Instant::now();
+
+        if let Err(e) = self.tick_water(to_network).await {
+            c_error!(to_console, "Error occurred while ticking water: {e}")
+        };
 
         let time = now.elapsed();
         Ok(time)

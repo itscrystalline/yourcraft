@@ -1,6 +1,5 @@
 use crossterm::event::EventStream;
 use futures::{FutureExt, StreamExt};
-use get_size::GetSize;
 use log::{debug, error, info, warn};
 use ratatui::{
     layout::{Constraint, Layout},
@@ -13,12 +12,12 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIter
 use rayon::prelude::*;
 use std::{
     io,
+    net::SocketAddr,
     num::{NonZeroU32, ParseFloatError, ParseIntError},
     str::FromStr,
 };
 use thiserror::Error;
 use tokio::{
-    net::UdpSocket,
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
     task::JoinHandle,
     time,
@@ -27,11 +26,9 @@ use tui_textarea::{Input, Key, TextArea};
 
 use crate::{
     constants,
-    network::{
-        ClientConnection, Packet, PacketTypes, ServerPlayerEnterLoaded, ServerPlayerLeaveLoaded,
-        ServerPlayerUpdatePos,
-    },
-    world::{self, BlockPos, World},
+    network::{ClientConnection, PacketTypes, ToNetwork},
+    player::{Acceleration, Velocity},
+    world::{self, BlockPos, PositionUpdate, World},
 };
 use tokio::time::Duration;
 
@@ -540,11 +537,12 @@ impl RatatuiConsole<'_> {
 
 pub async fn process_command(
     to_console: ToConsole,
-    socket: &UdpSocket,
+    to_network: ToNetwork,
     world: &mut World,
     command: Command,
     tick_times_saved: [Duration; 8],
     last_tick_time: Duration,
+    phys_last_tick_time: Duration,
 ) -> io::Result<bool> {
     match command {
         Command::Help => {
@@ -556,7 +554,13 @@ pub async fn process_command(
         Command::Mspt => {
             c_info!(
                 to_console,
-                "Tick Averages: {}ms ({:?}) last tick | {}ms ({:?}) 1s | {}ms ({:?}) 5s | {}ms ({:?}) 10s | {}ms ({:?}) 30s | {}ms ({:?}) 1m | {}ms ({:?}) 2m | {}ms ({:?}) 5m | {}ms ({:?}) 10m",
+                "Physics: {}ms ({:?}) last tick",
+                phys_last_tick_time.as_millis(),
+                phys_last_tick_time
+            );
+            c_info!(
+                to_console,
+                "World Tick Averages: {}ms ({:?}) last tick | {}ms ({:?}) 1s | {}ms ({:?}) 5s | {}ms ({:?}) 10s | {}ms ({:?}) 30s | {}ms ({:?}) 1m | {}ms ({:?}) 2m | {}ms ({:?}) 5m | {}ms ({:?}) 10m",
                 last_tick_time.as_millis(), last_tick_time,
                 tick_times_saved[0].as_millis(), tick_times_saved[0],
                 tick_times_saved[1].as_millis(), tick_times_saved[1],
@@ -580,7 +584,16 @@ pub async fn process_command(
             }
             c_info!(
                 to_console,
-                "Ticks Per Second Averages: {} TPS last tick | {} TPS 1s | {} TPS 5s | {} TPS 10s | {} TPS 30s | {} TPS 1m | {} TPS 2m | {} TPS 5m | {} TPS 10m",
+                "Physics: {} TPS last tick",
+                1000u128
+                    / std::cmp::max(
+                        phys_last_tick_time.as_millis(),
+                        1000u128 / constants::PHYS_TICKS_PER_SECOND as u128
+                    ),
+            );
+            c_info!(
+                to_console,
+                "World TPS Averages: {} TPS last tick | {} TPS 1s | {} TPS 5s | {} TPS 10s | {} TPS 30s | {} TPS 1m | {} TPS 2m | {} TPS 5m | {} TPS 10m",
                 tps!(last_tick_time),
                 tps!(tick_times_saved[0]),
                 tps!(tick_times_saved[1]),
@@ -611,7 +624,7 @@ pub async fn process_command(
             });
         }
         Command::Kick(id, msg) => {
-            world.kick(to_console, socket, id, Some(&msg)).await?;
+            world.kick(to_console, to_network, id, Some(&msg)).await?;
         }
         Command::Teleport { id, x, y } => {
             let idx_maybe = world.players.par_iter().position_any(|conn| conn.id == id);
@@ -625,8 +638,8 @@ pub async fn process_command(
 
                 world.players[idx].server_player.x = x;
                 world.players[idx].server_player.y = y;
-                world.players[idx].server_player.velocity = 0.0;
-                world.players[idx].server_player.acceleration = 0.0;
+                world.players[idx].server_player.velocity = Velocity::default();
+                world.players[idx].server_player.acceleration = Acceleration::default();
 
                 let new_player = &world.players[idx];
                 let (chunk_x, chunk_y) = world
@@ -655,53 +668,39 @@ pub async fn process_command(
                     .collect();
 
                 for conn in old_players {
-                    let leave_packet = ServerPlayerLeaveLoaded {
-                        player_id: new_player.id,
-                        player_name: new_player.name.clone(),
-                    };
                     encode_and_send!(
-                        to_console,
-                        PacketTypes::ServerPlayerLeaveLoaded,
-                        leave_packet,
-                        socket,
+                        to_network,
+                        PacketTypes::ServerPlayerLeaveLoaded {
+                            player_id: new_player.id,
+                            player_name: new_player.name.clone(),
+                        },
                         conn.addr
                     );
                 }
-                let move_packet = ServerPlayerUpdatePos {
-                    player_id: new_player.id,
-                    pos_x: new_player.server_player.x,
-                    pos_y: new_player.server_player.y,
-                };
+                let mut update_queue: Vec<SocketAddr> = Vec::new();
                 for conn in players_loading_new_chunk {
                     if new_players.contains(&conn) {
-                        let enter_packet = ServerPlayerEnterLoaded {
-                            player_id: new_player.id,
-                            player_name: new_player.name.clone(),
-                            pos_x: new_player.server_player.x,
-                            pos_y: new_player.server_player.y,
-                        };
                         encode_and_send!(
-                            to_console,
-                            PacketTypes::ServerPlayerEnterLoaded,
-                            enter_packet,
-                            socket,
+                            to_network,
+                            PacketTypes::ServerPlayerEnterLoaded {
+                                player_id: new_player.id,
+                                player_name: new_player.name.clone(),
+                                pos_x: new_player.server_player.x,
+                                pos_y: new_player.server_player.y,
+                            },
                             conn.addr
                         );
                     }
-                    encode_and_send!(
-                        to_console,
-                        PacketTypes::ServerPlayerUpdatePos,
-                        move_packet.clone(),
-                        socket,
-                        conn.addr
-                    );
+                    update_queue.push(conn.addr);
                 }
-                encode_and_send!(
-                    to_console,
-                    PacketTypes::ServerPlayerUpdatePos,
-                    move_packet,
-                    socket,
-                    new_player.addr
+                update_queue.push(new_player.addr);
+                world.physics_update_queue.insert(
+                    new_player.id,
+                    PositionUpdate {
+                        pos_x: new_player.server_player.x,
+                        pos_y: new_player.server_player.y,
+                        recievers: update_queue,
+                    },
                 );
                 c_info!(
                     to_console,
@@ -714,10 +713,7 @@ pub async fn process_command(
         }
         Command::SetBlock { pos } => {
             let (x, y, block) = pos;
-            match world
-                .set_block_and_notify(to_console.clone(), socket, x, y, block)
-                .await
-            {
+            match world.set_block_and_notify(to_network, x, y, block).await {
                 Ok(_) => c_info!(to_console, "Set block at ({x}, {y}) to {block:?}"),
                 Err(e) => c_error!(to_console, "Cannot set block at ({x}, {y}): {e}"),
             };

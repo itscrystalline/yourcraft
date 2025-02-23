@@ -33,6 +33,7 @@ in {
     enable = true;
     package = pkgs.python312Full;
   };
-
+  
+  devcontainer.enable = true;
   scripts.repl.exec = "evcxr";
 }

@@ -1,24 +1,30 @@
 import pickle
 import socket
 
-HELLO = 1
+HELLO = "ClientHello"
 PLAYER_COORDINATES = 2
-CHUNK_UPDATE = 4
+CHUNK_REQUEST = 3
+CHUNK_UPDATE = "ServerChunkResponse"
+CHUNK_UNLOAD = 5
+PLAYER_JOIN = 6
+PLAYER_ENTER_LOAD = 7
+PLAYER_LEAVE_LOAD = 8
+PLAYER_LEAVE = 9
 GOODBYE = 10
-KICK = 16
-HEARTBEAT_SERVER = 17
+PLACE_BLOCK = 11
+UPDATE_BLOCK = 12
+PLAYER_JUMP = 14
+PLAYER_UPDATE_POS = "ServerPlayerUpdatePos"
+KICK = "ServerKick"
+HEARTBEAT_SERVER = "ServerHeartbeat"
 HEARTBEAT_CLIENT = 18
 
+
 class Packet:
-    def __init__(self, packet_type):
-        self.t = packet_type
     def serialize(self):
-        serialized_inner = pickle.dumps(self.to_dict())
-        return pickle.dumps({"t": self.t, "data": serialized_inner})
-    def to_dict(self):
-        d = dict(self.__dict__)
-        d.pop("t")
-        return d
+        contents = self.__dict__
+        name = type(self).__name__
+        return pickle.dumps((name, contents))
 
 
 class ServerConnection:
@@ -31,35 +37,57 @@ class ServerConnection:
 
     def recv(self):
         packet = pickle.loads(self.socket.recv(1024*16))
-        packet['data'] = pickle.loads(packet['data'])
-        return packet
+        return {
+            "t": next(iter(packet.keys())),
+            "data": next(iter(packet.values()))
+        }
 
 
-class Hello(Packet):
+class ClientHello(Packet):
     def __init__(self, username):
-        super().__init__(HELLO)
         self.name = username
 
 
-class Goodbye(Packet):
-    def __init__(self):
-        super().__init__(GOODBYE)
+class ClientGoodbye(Packet):
+    pass
 
 
-class Heartbeat(Packet):
-    def __init__(self):
-        super().__init__(HEARTBEAT_CLIENT)
+class ClientHeartbeat(Packet):
+    pass
 
-class ClientRequestChunk (Packet):
+
+class ClientRequestChunk(Packet):
     def __init__(self, x, y):
-        super().__init__(3)
         self.chunk_coords_x = x
         self.chunk_coords_y = y
+
+
+class ClientPlaceBlock(Packet):
+    def __init__(self, block, x, y):
+        self.block: int = block
+        self.x: int = x
+        self.y: int = y
+
+
+class ClientPlayerXVelocity(Packet):
+    def __init__(self, x):
+        self.vel_x = x
+
+
+class ClientPlayerJump(Packet):
+    pass
+
+
+class ClientUnloadChunk(Packet):
+    def __init__(self, x, y):
+        self.chunk_coords_x = x
+        self.chunk_coords_y = y
+
 
 def test():
     conn = ServerConnection("127.0.0.1")
 
-    conn.send(Hello("test"))
+    conn.send(ClientHello("test"))
     INIT_DATA = conn.recv()
 
     print(INIT_DATA)
@@ -77,4 +105,8 @@ def test():
             exit(0)
         elif receiving['t'] == HEARTBEAT_SERVER:
             print("heartbeat received")
-            conn.send(Heartbeat())
+            conn.send(ClientHeartbeat())
+
+
+if __name__ == "__main__":
+    test()
