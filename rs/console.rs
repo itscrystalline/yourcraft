@@ -553,8 +553,13 @@ pub async fn process_command(
         Command::Mspt => {
             c_info!(
                 to_console,
-                "Physics: {}ms ({:?}) last tick   World Tick Averages: {}ms ({:?}) last tick | {}ms ({:?}) 1s | {}ms ({:?}) 5s | {}ms ({:?}) 10s | {}ms ({:?}) 30s | {}ms ({:?}) 1m | {}ms ({:?}) 2m | {}ms ({:?}) 5m | {}ms ({:?}) 10m",
-                phys_last_tick_time.as_millis(), phys_last_tick_time,
+                "Physics: {}ms ({:?}) last tick",
+                phys_last_tick_time.as_millis(),
+                phys_last_tick_time
+            );
+            c_info!(
+                to_console,
+                "World Tick Averages: {}ms ({:?}) last tick | {}ms ({:?}) 1s | {}ms ({:?}) 5s | {}ms ({:?}) 10s | {}ms ({:?}) 30s | {}ms ({:?}) 1m | {}ms ({:?}) 2m | {}ms ({:?}) 5m | {}ms ({:?}) 10m",
                 last_tick_time.as_millis(), last_tick_time,
                 tick_times_saved[0].as_millis(), tick_times_saved[0],
                 tick_times_saved[1].as_millis(), tick_times_saved[1],
@@ -578,8 +583,16 @@ pub async fn process_command(
             }
             c_info!(
                 to_console,
-                "Physics TPS: {} TPS last tick   World Ticks Per Second Averages: {} TPS last tick | {} TPS 1s | {} TPS 5s | {} TPS 10s | {} TPS 30s | {} TPS 1m | {} TPS 2m | {} TPS 5m | {} TPS 10m",
-                1000u128 / std::cmp::max(phys_last_tick_time.as_millis(), 1000u128 / constants::PHYS_TICKS_PER_SECOND as u128),
+                "Physics: {} TPS last tick",
+                1000u128
+                    / std::cmp::max(
+                        phys_last_tick_time.as_millis(),
+                        1000u128 / constants::PHYS_TICKS_PER_SECOND as u128
+                    ),
+            );
+            c_info!(
+                to_console,
+                "World TPS Averages: {} TPS last tick | {} TPS 1s | {} TPS 5s | {} TPS 10s | {} TPS 30s | {} TPS 1m | {} TPS 2m | {} TPS 5m | {} TPS 10m",
                 tps!(last_tick_time),
                 tps!(tick_times_saved[0]),
                 tps!(tick_times_saved[1]),

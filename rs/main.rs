@@ -169,8 +169,9 @@ async fn main() -> io::Result<()> {
             }
             packet_maybe = from_network.recv() => {
                 // hopefully will fix windows bullshit
-                if let Some((addr, packet)) = packet_maybe {
-                    network::process_client_packet(to_console.clone(), to_network.clone(), packet, addr, &mut world).await?;
+                match packet_maybe {
+                    Some((addr, packet)) => network::process_client_packet(to_console.clone(), to_network.clone(), packet, addr, &mut world).await?,
+                    None => break,
                 }
             }
             _ = heartbeat_tick.tick() => {
