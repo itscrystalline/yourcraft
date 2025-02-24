@@ -45,7 +45,7 @@ WorldPosition = classic_component.Position2D()
 WorldDelta = classic_component.Velocity2D()
 
 # Block Types (In dev)
-BlockType = [(0, 0, 0), (0, 255, 0), (128, 128, 128), (0, 0, 255), (1, 50, 32), (0, 0, 255), (165, 42, 42)]
+BlockType = [pygame.image.load("C:/Users/userm/Downloads/grassblock.png")]
 
 # Set connection
 cliNet = network.ServerConnection("127.0.0.1")
@@ -128,7 +128,9 @@ def draw_world(chunkCoord):
                         loadChunk[0] * 16 * pixel_scaling - blockPos[0] * pixel_scaling + WorldPosition.x + 14.5 * pixel_scaling + screen_width / 2,
                         -loadChunk[1] * 16 * pixel_scaling + blockPos[1] * pixel_scaling - WorldPosition.y - 15 * pixel_scaling + screen_height / 2
                     )
-                    pygame.draw.rect(screen, BlockType[blockType], (blockScreenPos[0], blockScreenPos[1], pixel_scaling, pixel_scaling))
+                    screen.blit(BlockType[blockType], (blockScreenPos[0], blockScreenPos[1]))
+
+
             else:
                 if (loadChunkX < 0) or (loadChunkY < 0):
                     continue
