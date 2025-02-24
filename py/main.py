@@ -6,6 +6,7 @@ import classic_entity
 import network
 import time
 import threading
+import os
 
 # Initialize Pygame
 pygame.init()
@@ -44,8 +45,14 @@ World = {}
 WorldPosition = classic_component.Position2D()
 WorldDelta = classic_component.Velocity2D()
 
-# Block Types (In dev)
-BlockType = [pygame.image.load("C:/Users/userm/Downloads/grassblock.png")]
+
+# Block Types
+def load_resource(name):
+    file = f"{os.path.dirname(os.path.realpath(__file__))}/resources/{name}"
+    return pygame.image.load(file)
+
+
+BlockType = list(map(load_resource, ["grassblock.png", "stoneblock.png", "woodblock.png", "stoneblock.png", "waterblock.png"]))
 
 # Set connection
 cliNet = network.ServerConnection("127.0.0.1")
@@ -128,7 +135,8 @@ def draw_world(chunkCoord):
                         loadChunk[0] * 16 * pixel_scaling - blockPos[0] * pixel_scaling + WorldPosition.x + 14.5 * pixel_scaling + screen_width / 2,
                         -loadChunk[1] * 16 * pixel_scaling + blockPos[1] * pixel_scaling - WorldPosition.y - 15 * pixel_scaling + screen_height / 2
                     )
-                    screen.blit(BlockType[blockType], (blockScreenPos[0], blockScreenPos[1]))
+                    if blockType > 0:
+                        screen.blit(BlockType[blockType - 1], (blockScreenPos[0], blockScreenPos[1]))
 
 
             else:
