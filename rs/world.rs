@@ -985,8 +985,7 @@ define_blocks! {
     Air = (0, false),
     Grass = (1, true),
     Stone = (2, true),
-    Log = (3, true),
+    Wood = (3, true),
     Leaves = (4, true),
     Water = (5, false),
-    Wood = (6, true)
 }
