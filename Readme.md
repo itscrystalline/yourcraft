@@ -5,7 +5,7 @@ This is 2d minecraft written in Rust and Python.
 - 22 Ashira Saelim ([@FujiForm2023](https://github.com/FujiForm2023)): Client Networking, Client Logic
 - 28 Korawit Kumpakarn ([@napookooo](https://github.com/napookooo)): Game Logic
 - 25 Nuntanut Poonpayap ([@NessShadow](https://github.com/NessShadow)): Art, Client
-- 41 Pannathorn Hanjirasawat: Art, Client
+- 41 Pannathorn Hanjirasawat ([@koolmakmak](https://github.com/koolmakmak)): Art, Client
 
 ## Running
 > [!NOTE]
