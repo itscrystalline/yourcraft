@@ -124,7 +124,8 @@ kicked from the server.
 ✅✅ [C2S] ClientPlaceBlock (block: Block Enum as int, x: int, y: int)                                                      
 🟨⬛ [S2C] ServerUpdateBlock (block: Block Enum as int, x: int, y: int)                                                     
 ✅✅ [C2S] ClientPlayerXVelocity (vel_x: float)                                                                                 
-✅✅ [C2S] ClientPlayerJump ()                                                                                              
+✅✅ [C2S] ClientPlayerJump ()
+🟨⬛️ [C2S] ClientPlayerRespawn ()
 ✅✅ [S2C] ServerPlayerUpdatePos (player_id: int, pos_x: float, pos_y: float)                                               
 ✅✅ [S2C] ServerKick (msg: str)                                                                                            
 ✅✅ [S2C] ServerHeartbeat                                                                                                  
