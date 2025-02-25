@@ -449,6 +449,7 @@ pub async fn process_client_packet(
         PacketTypes::ClientPlayerJump {} => {
             assert_player_exists!(to_console, world, addr, par_iter, position_any, idx, {
                 world.players[idx].server_player.do_jump = true;
+                c_debug!(to_console, "jumping!");
             });
         }
         PacketTypes::ClientPlayerXVelocity { vel_x } => {

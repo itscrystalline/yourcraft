@@ -617,12 +617,14 @@ pub async fn process_command(
             world.players.iter().for_each(|player| {
                 c_info!(
                     to_console,
-                    "  {}: {} (addr: {}) at ({}, {})",
+                    "  {}: {} (addr: {}) at ({}, {}) velocity: {:?} acceleration: {:?}",
                     player.id,
                     player.name.clone(),
                     player.addr,
                     player.server_player.x,
-                    player.server_player.y
+                    player.server_player.y,
+                    player.server_player.velocity,
+                    player.server_player.acceleration
                 );
             });
         }

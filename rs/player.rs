@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use crate::{
     constants,
     world::{is_solid, BlockPos, World, WorldError},
@@ -74,6 +76,13 @@ impl From<&[Option<BlockPos>]> for Surrounding {
     }
 }
 
+#[derive(PartialEq)]
+enum Shift {
+    Left,
+    None,
+    Right,
+}
+
 impl Player {
     pub fn spawn_at(world: &World, x: u32) -> Result<Self, WorldError> {
         let (highest_x, highest_y) = world.get_highest_block_at(x)?;
@@ -92,13 +101,11 @@ impl Player {
         // bottom corner
         let (snap_x, snap_y) = (self.x.round(), self.y.round());
 
-        let (mut moving_left, mut moving_right) = (false, false);
-
-        if self.x - snap_x > 0.0 {
-            moving_right = true;
-        } else if self.x - snap_x < 0.0 {
-            moving_left = true;
-        }
+        let direction = match (self.x - snap_x).partial_cmp(&0.0) {
+            Some(Ordering::Less) => Shift::Left,
+            Some(Ordering::Greater) => Shift::Right,
+            _ => Shift::None,
+        };
 
         let Surrounding {
             top_center,
@@ -125,27 +132,20 @@ impl Player {
 
         let mut has_changed = false;
 
-        if self.y != snap_y {
-            if bottom_center_solid && self.velocity.y < 0.0 {
-                self.y = snap_y;
-                has_changed = true;
-            }
-
-            if top_center_solid && self.velocity.y > 0.0 {
-                self.y = snap_y;
-                has_changed = true;
-            }
+        if self.y != snap_y
+            && ((bottom_center_solid && self.velocity.y < 0.0)
+                || (top_center_solid && self.velocity.y > 0.0))
+        {
+            self.y = snap_y;
+            has_changed = true;
         }
-        if self.x != snap_x {
-            if (left_up_solid || left_down_solid) && moving_left {
-                self.x = snap_x;
-                has_changed = true;
-            }
 
-            if (right_up_solid || right_down_solid) && moving_right {
-                self.x = snap_x;
-                has_changed = true;
-            }
+        if self.x != snap_x
+            && (((right_up_solid || right_down_solid) && direction == Shift::Right)
+                || ((left_up_solid || left_down_solid) && direction == Shift::Left))
+        {
+            self.x = snap_x;
+            has_changed = true;
         }
 
         (self, has_changed)
