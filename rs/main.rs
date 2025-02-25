@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use console::Stats;
 use log::{error, info, LevelFilter};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
+use serde_pickle::error;
 use std::cmp::max;
 use std::io;
 use std::num::NonZeroU32;
@@ -159,7 +160,16 @@ async fn main() -> io::Result<()> {
     let mut tick_times_current: [Duration; 8] = [Duration::default(); 8];
     let mut tick_times_count: [u32; 8] = [0u32; 8];
 
-    let socket = UdpSocket::bind(format!("0.0.0.0:{}", settings.port)).await?;
+    let socket_result = UdpSocket::bind(format!("0.0.0.0:{}", settings.port)).await;
+    let socket = match socket_result {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = to_console.send(console::ToConsoleType::Quit);
+            console_thread.await.unwrap();
+            error!("error binding port: {e}");
+            exit(1);
+        }
+    };
     let (network_thread, mut from_network, to_network) =
         network::init(socket, to_console.clone(), settings.max_network_errors);
     loop {
