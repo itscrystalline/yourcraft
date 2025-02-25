@@ -86,6 +86,7 @@ def NetworkThread():
     while True:
         time.sleep(0.016)  # Sleep for 16ms (for approx. 60FPS)
         receiving = cliNet.recv()
+        print(receiving)
 
         # Synchronize access to the shared resource
         with network_lock:
@@ -161,7 +162,10 @@ def draw_world(chunkCoord):
 # Draw other players
 def draw_other_players():
     for eachPlayer in otherPlayers.values():
-        pygame.draw.rect(screen, WHITE, (eachPlayer['pos_x'] * pixel_scaling - position2D.x - pixel_scaling/2, eachPlayer['pos_y'] * pixel_scaling - position2D.y - pixel_scaling, pixel_scaling, 2 * pixel_scaling))
+        pygame.draw.rect(screen, WHITE, (position2D.x - eachPlayer['pos_x'] * pixel_scaling - pixel_scaling/2, position2D.y - eachPlayer['pos_y'] * pixel_scaling + screen_height / 2 - pixel_scaling, pixel_scaling, 2 * pixel_scaling))
+        # print("start",(eachPlayer['pos_x'], eachPlayer['pos_y']))
+        # print((position2D.x / pixel_scaling, position2D.y / pixel_scaling))
+        # print((eachPlayer['pos_x'] * pixel_scaling - position2D.x, eachPlayer['pos_y'] * pixel_scaling - position2D.y),"end")
 
 # Sync Server
 def sync_data():
@@ -257,7 +261,7 @@ def main():
 
         # Debug chunk
         if keys[pygame.K_EQUALS]:
-            cliNet.send(network.ClientPlayerXVelocity(position2D.x / pixel_scaling))
+            cliNet.send(network.ClientPlayerXVelocity(0))
         if keys[pygame.K_w]:  # Move up
             position2D.y += speed * dt
             WorldDelta.vy += speed * dt
