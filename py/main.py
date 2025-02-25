@@ -118,6 +118,7 @@ def NetworkThread():
                 except KeyError:
                     pass
 
+
 # Draw world
 def draw_world(chunkCoord):
     dChunkX = math.ceil(screen_width / 32 / pixel_scaling)
@@ -160,7 +161,7 @@ def draw_world(chunkCoord):
 # Draw other players
 def draw_other_players():
     for eachPlayer in otherPlayers.values():
-       pygame.draw.rect(screen, WHITE, (eachPlayer['pos_x'] - position2D.x - pixel_scaling/2, eachPlayer['pos_y'] - position2D.y - pixel_scaling, pixel_scaling, 2 * pixel_scaling))
+        pygame.draw.rect(screen, WHITE, (eachPlayer['pos_x'] * pixel_scaling - position2D.x - pixel_scaling/2, eachPlayer['pos_y'] * pixel_scaling - position2D.y - pixel_scaling, pixel_scaling, 2 * pixel_scaling))
 
 # Sync Server
 def sync_data():
