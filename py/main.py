@@ -162,6 +162,11 @@ def sync_data():
 
                 protocolValue.clear()
 
+# Get block
+def get_block(x, y) -> int:
+    return World [(int(x // (16 * pixel_scaling)), int(y // (16 * pixel_scaling)))] \
+        [(15 - int(x % (16 * pixel_scaling) // pixel_scaling), 15 - int(y % (16 * pixel_scaling) // pixel_scaling))]
+
 # Game loop
 def main():
     global running, screen_size, screen_width, screen_height, WasJump, prev_direction
@@ -196,7 +201,7 @@ def main():
             movement_update = True
             if prev_direction != -1:
                 need_update_pos = True
-                speed_update = -1 * speed * dt
+                speed_update = -speed * dt
                 prev_direction = -1
         elif keys[currentPlayer.keys[1]]:  # Move right
             position2D.x += speed * dt
@@ -252,7 +257,7 @@ def main():
             WorldPosition.x -= WorldDelta.vx
             WorldPosition.y -= WorldDelta.vy
             if need_update_pos:
-                print("sendiong velocity")
+                print("sending velocity")
                 cliNet.send(network.ClientPlayerXVelocity(speed_update / pixel_scaling))
 
         # Draw world (visible chunks)
@@ -266,7 +271,7 @@ def main():
         screen.blit(font.render(f"{position2D}", 1, WHITE), (400, 0))
 
         # Update the display
-        pygame.display.flip()
+        pygame.display.update()
 
 # Quit Pygame
 if __name__ == '__main__':
