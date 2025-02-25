@@ -52,7 +52,7 @@ def load_resource(name):
     return pygame.image.load(file)
 
 
-BlockType = list(map(load_resource, ["grassblock.png", "stoneblock.png", "woodblock.png", "stoneblock.png", "waterblock.png"]))
+BlockType = list(map(load_resource, ["grassblock.png", "stoneblock.png", "woodblock.png", "leaves.png", "waterblock.png"]))
 
 # Set connection
 cliNet = network.ServerConnection("127.0.0.1")
