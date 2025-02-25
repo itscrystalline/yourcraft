@@ -38,7 +38,7 @@ currentPlayer.keys = [pygame.K_a, pygame.K_d, pygame.K_e, pygame.K_q, pygame.K_S
 position2D = currentPlayer.getComponent("transform2D").getVariable("position")
 speed = 10 * pixel_scaling
 
-otherPlayers = []
+otherPlayers = {}
 
 # World
 World = {}
@@ -49,7 +49,9 @@ WorldDelta = classic_component.Velocity2D()
 # Block Types
 def load_resource(name):
     file = f"{os.path.dirname(os.path.realpath(__file__))}/resources/{name}"
-    return pygame.image.load(file)
+    pic = pygame.image.load(file)
+    pic = pygame.transform.scale_by(pic, 2).convert_alpha()
+    return pic
 
 
 BlockType = list(map(load_resource, ["grassblock.png", "stoneblock.png", "woodblock.png", "leaves.png", "waterblock.png"]))
@@ -106,6 +108,16 @@ def NetworkThread():
                     if network.PLAYER_UPDATE_POS not in ReadyToUpdate:
                         ReadyToUpdate[network.PLAYER_UPDATE_POS] = {}
                     ReadyToUpdate[network.PLAYER_UPDATE_POS][receivedPlayerID] = receiving['data']
+            elif receiving['t'] == network.PLAYER_ENTER_LOAD:
+                otherPlayers[receiving['data']['player_id']] = receiving['data']
+                del otherPlayers[receiving['data']['player_id']]['player_id']
+            elif receiving['t'] == network.PLAYER_LEAVE_LOAD:
+                try:
+                    otherPlayers[receiving['data']['player_id']].clear()
+                    del otherPlayers[receiving['data']['player_id']]
+                except KeyError:
+                    pass
+
 # Draw world
 def draw_world(chunkCoord):
     dChunkX = math.ceil(screen_width / 32 / pixel_scaling)
@@ -144,6 +156,11 @@ def draw_world(chunkCoord):
                     continue
                 World[loadChunk] = {}
                 cliNet.send(network.ClientRequestChunk(loadChunk[0], loadChunk[1]))
+
+# Draw other players
+def draw_other_players():
+    for eachPlayer in otherPlayers.values():
+       pygame.draw.rect(screen, WHITE, (eachPlayer['pos_x'] - position2D.x - pixel_scaling/2, eachPlayer['pos_y'] - position2D.y - pixel_scaling, pixel_scaling, 2 * pixel_scaling))
 
 # Sync Server
 def sync_data():
@@ -262,6 +279,9 @@ def main():
 
         # Draw world (visible chunks)
         draw_world(chunkCoord)
+
+        # Draw other players
+        draw_other_players()
 
         # Draw player
         pygame.draw.rect(screen, WHITE, (screen_width / 2 - pixel_scaling/2, screen_height / 2 - pixel_scaling, pixel_scaling, 2 * pixel_scaling))
