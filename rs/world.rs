@@ -935,13 +935,13 @@ impl World {
     }
 
     pub async fn flush_physics_queue(&mut self, to_network: ToNetwork) -> io::Result<()> {
-        self.physics_update_queue.iter().for_each(
+        self.physics_update_queue.drain().for_each(
             |(
-                &player_id,
-                &PositionUpdate {
+                player_id,
+                PositionUpdate {
                     pos_x,
                     pos_y,
-                    ref recievers,
+                    recievers,
                 },
             )| {
                 recievers.iter().for_each(|&reciever| {
