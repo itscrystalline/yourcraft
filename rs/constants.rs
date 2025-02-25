@@ -13,4 +13,4 @@ pub const G: f32 = 9.81 / (PHYS_TICKS_PER_SECOND.pow(2) as f32);
 pub const TERMINAL_VELOCITY: f32 = 54.0 / (PHYS_TICKS_PER_SECOND as f32);
 pub const INITIAL_JUMP_SPEED: f32 = 25.0 / (PHYS_TICKS_PER_SECOND as f32);
 pub const INITIAL_JUMP_ACCEL: f32 = 50.0 / (PHYS_TICKS_PER_SECOND.pow(2) as f32);
-pub const RESPAWN_THRESHOLD: f32 = -500.0;
+pub const RESPAWN_THRESHOLD: f32 = -256.0;
