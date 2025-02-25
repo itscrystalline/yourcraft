@@ -9,10 +9,8 @@ use ratatui::{
     DefaultTerminal, Frame,
 };
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
-use rayon::prelude::*;
 use std::{
     io,
-    net::SocketAddr,
     num::{NonZeroU32, ParseFloatError, ParseIntError},
     str::FromStr,
 };
@@ -26,9 +24,9 @@ use tui_textarea::{Input, Key, TextArea};
 
 use crate::{
     constants,
-    network::{ClientConnection, PacketTypes, ToNetwork},
-    player::{Acceleration, Velocity},
-    world::{self, BlockPos, PositionUpdate, World},
+    network::ToNetwork,
+    player::{Acceleration, Player, Velocity},
+    world::{self, BlockPos, World},
 };
 use tokio::time::Duration;
 
@@ -44,6 +42,7 @@ pub enum Command {
     Players,
     Kick(u32, String),
     Teleport { id: u32, x: f32, y: f32 },
+    Respawn(u32),
     SetBlock { pos: BlockPos },
     GetBlock { x: u32, y: u32 },
     SetSpawn(u32),
@@ -112,6 +111,10 @@ impl FromStr for Command {
                 let player_id = next_type_token_or_err!(tokens, "player_id", u32);
                 let reason = next_token!(tokens, "reason");
                 Ok(Command::Kick(player_id, reason.to_string()))
+            }
+            "respawn" => {
+                let id = next_type_token_or_err!(tokens, "player_id", u32);
+                Ok(Command::Respawn(id))
             }
             "teleport" | "tp" => {
                 let id = next_type_token_or_err!(tokens, "player_id", u32);
@@ -625,6 +628,24 @@ pub async fn process_command(
         }
         Command::Kick(id, msg) => {
             world.kick(to_console, to_network, id, Some(&msg)).await?;
+        }
+        Command::Respawn(id) => {
+            let idx_maybe = world.players.par_iter().position_any(|conn| conn.id == id);
+            if let Some(idx) = idx_maybe {
+                let spawn = world.get_spawn();
+                let old_player = &world.players[idx];
+                let (old_x, old_y) = (old_player.server_player.x, old_player.server_player.y);
+                world.players[idx].server_player = match Player::spawn_at(world, spawn) {
+                    Ok(new) => new,
+                    Err(e) => {
+                        c_error!(to_console, "error spawning new player: {e}");
+                        return Ok(false);
+                    }
+                };
+                world.notify_player_moved(to_network, &world.players[idx].clone(), old_x, old_y)?;
+            } else {
+                c_error!(to_console, "Player doesn't exist.")
+            }
         }
         Command::Teleport { id, x, y } => {
             let idx_maybe = world.players.par_iter().position_any(|conn| conn.id == id);
