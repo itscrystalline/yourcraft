@@ -1,5 +1,5 @@
 use crate::console::ToConsole;
-use crate::player::Player;
+use crate::player::{self, Player};
 use crate::world::{Chunk, World, WorldError};
 use crate::{c_debug, c_error, c_info, c_warn};
 use rand::prelude::*;
@@ -18,7 +18,7 @@ impl PacketTypes {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ClientConnection {
     pub addr: SocketAddr,
     pub name: String,
@@ -132,6 +132,7 @@ pub enum PacketTypes {
         vel_x: f32,
     },
     ClientPlayerJump {},
+    ClientPlayerRespawn {},
     ServerPlayerUpdatePos {
         player_id: u32,
         pos_x: f32,
@@ -497,6 +498,22 @@ pub async fn process_client_packet(
                     }
                 };
             })
+        }
+        PacketTypes::ClientPlayerRespawn {} => {
+            assert_player_exists!(to_console, world, addr, par_iter, position_any, idx, {
+                let spawn = world.get_spawn();
+                let old_player_conn = &world.players[idx];
+                let (old_x, old_y) = (
+                    old_player_conn.server_player.x,
+                    old_player_conn.server_player.y,
+                );
+                world.players[idx].server_player = unwrap_or_return_early!(
+                    to_console,
+                    Player::spawn_at(world, spawn),
+                    "cannot spawn player: {}"
+                );
+                world.notify_player_moved(to_network, &world.players[idx].clone(), old_x, old_y)?;
+            });
         }
         PacketTypes::ClientHeartbeat {} => {
             assert_player_exists!(

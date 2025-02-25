@@ -629,83 +629,21 @@ pub async fn process_command(
         Command::Teleport { id, x, y } => {
             let idx_maybe = world.players.par_iter().position_any(|conn| conn.id == id);
             if let Some(idx) = idx_maybe {
-                let (old_chunk_x, old_chunk_y) = world
-                    .get_chunk_block_is_in(
-                        world.players[idx].server_player.x.round() as u32,
-                        world.players[idx].server_player.y.round() as u32,
-                    )
-                    .unwrap_or((0, 0));
+                let (old_x, old_y) = (
+                    world.players[idx].server_player.x,
+                    world.players[idx].server_player.y,
+                );
 
                 world.players[idx].server_player.x = x;
                 world.players[idx].server_player.y = y;
                 world.players[idx].server_player.velocity = Velocity::default();
                 world.players[idx].server_player.acceleration = Acceleration::default();
+                world.notify_player_moved(to_network, &world.players[idx].clone(), old_x, old_y)?;
 
-                let new_player = &world.players[idx];
-                let (chunk_x, chunk_y) = world
-                    .get_chunk_block_is_in(
-                        new_player.server_player.x.round() as u32,
-                        new_player.server_player.y.round() as u32,
-                    )
-                    .unwrap_or((0, 0));
-
-                let players_loading_old_chunk = world
-                    .get_list_of_players_loading_chunk(old_chunk_x, old_chunk_y)
-                    .unwrap_or_default();
-                let players_loading_new_chunk = world
-                    .get_list_of_players_loading_chunk(chunk_x, chunk_y)
-                    .unwrap_or_default();
-
-                let old_players: Vec<&ClientConnection> = players_loading_old_chunk
-                    .clone()
-                    .into_par_iter()
-                    .filter(|conn| !players_loading_new_chunk.contains(conn))
-                    .collect();
-                let new_players: Vec<&ClientConnection> = players_loading_new_chunk
-                    .clone()
-                    .into_par_iter()
-                    .filter(|conn| !players_loading_old_chunk.contains(conn))
-                    .collect();
-
-                for conn in old_players {
-                    encode_and_send!(
-                        to_network,
-                        PacketTypes::ServerPlayerLeaveLoaded {
-                            player_id: new_player.id,
-                            player_name: new_player.name.clone(),
-                        },
-                        conn.addr
-                    );
-                }
-                let mut update_queue: Vec<SocketAddr> = Vec::new();
-                for conn in players_loading_new_chunk {
-                    if new_players.contains(&conn) {
-                        encode_and_send!(
-                            to_network,
-                            PacketTypes::ServerPlayerEnterLoaded {
-                                player_id: new_player.id,
-                                player_name: new_player.name.clone(),
-                                pos_x: new_player.server_player.x,
-                                pos_y: new_player.server_player.y,
-                            },
-                            conn.addr
-                        );
-                    }
-                    update_queue.push(conn.addr);
-                }
-                update_queue.push(new_player.addr);
-                world.physics_update_queue.insert(
-                    new_player.id,
-                    PositionUpdate {
-                        pos_x: new_player.server_player.x,
-                        pos_y: new_player.server_player.y,
-                        recievers: update_queue,
-                    },
-                );
                 c_info!(
                     to_console,
                     "Teleported {} (id {id}) to ({x}, {y})",
-                    new_player.name
+                    world.players[idx].name
                 )
             } else {
                 c_error!(to_console, "Player {id} does not exist!")

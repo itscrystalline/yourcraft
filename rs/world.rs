@@ -810,6 +810,92 @@ impl World {
         Surrounding::from(block_pos_vec.as_slice())
     }
 
+    pub fn notify_player_moved(
+        &mut self,
+        to_network: ToNetwork,
+        new_player: &ClientConnection,
+        old_x: f32,
+        old_y: f32,
+    ) -> io::Result<()> {
+        let (old_chunk_x, old_chunk_y) = self
+            .get_chunk_block_is_in(old_x.round() as u32, old_y.round() as u32)
+            .unwrap_or((0, 0));
+        let (chunk_x, chunk_y) = self
+            .get_chunk_block_is_in(
+                new_player.server_player.x.round() as u32,
+                new_player.server_player.y.round() as u32,
+            )
+            .unwrap_or((0, 0));
+
+        let players_loading_chunk: Vec<&ClientConnection> = self
+            .get_list_of_players_loading_chunk(chunk_x, chunk_y)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|conn| conn.id != new_player.id)
+            .collect();
+
+        let mut update_queue: Vec<SocketAddr> = Vec::new();
+
+        if (old_chunk_x, old_chunk_y) == (chunk_x, chunk_y) {
+            players_loading_chunk.into_iter().for_each(|conn| {
+                update_queue.push(conn.addr);
+            });
+        } else {
+            let players_loading_old_chunk: Vec<&ClientConnection> = self
+                .get_list_of_players_loading_chunk(old_chunk_x, old_chunk_y)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|conn| conn.id != new_player.id)
+                .collect();
+            let old_players: Vec<&ClientConnection> = players_loading_old_chunk
+                .clone()
+                .into_iter()
+                .filter(|conn| !players_loading_chunk.contains(conn))
+                .collect();
+            let new_players: Vec<&ClientConnection> = players_loading_chunk
+                .clone()
+                .into_iter()
+                .filter(|conn| !players_loading_old_chunk.contains(conn))
+                .collect();
+            old_players.into_iter().for_each(|conn| {
+                encode_and_send!(
+                    to_network,
+                    PacketTypes::ServerPlayerLeaveLoaded {
+                        player_id: new_player.id,
+                        player_name: new_player.name.clone(),
+                    },
+                    conn.addr
+                );
+            });
+            players_loading_chunk.into_iter().for_each(|conn| {
+                if new_players.contains(&conn) {
+                    encode_and_send!(
+                        to_network,
+                        PacketTypes::ServerPlayerEnterLoaded {
+                            player_id: new_player.id,
+                            player_name: new_player.name.clone(),
+                            pos_x: new_player.server_player.x,
+                            pos_y: new_player.server_player.y,
+                        },
+                        conn.addr
+                    );
+                }
+                update_queue.push(conn.addr);
+            });
+        }
+
+        update_queue.push(new_player.addr);
+        self.physics_update_queue.insert(
+            new_player.id,
+            PositionUpdate {
+                pos_x: new_player.server_player.x,
+                pos_y: new_player.server_player.y,
+                recievers: update_queue,
+            },
+        );
+        Ok(())
+    }
+
     pub async fn physics_tick(&mut self, to_network: ToNetwork) -> io::Result<Duration> {
         let now = Instant::now();
 
@@ -840,74 +926,7 @@ impl World {
         let mut new_players = vec![];
         for (new_player, update_pos, (old_x, old_y)) in res {
             if update_pos {
-                let (old_chunk_x, old_chunk_y) = self
-                    .get_chunk_block_is_in(old_x.round() as u32, old_y.round() as u32)
-                    .unwrap_or((0, 0));
-                let (chunk_x, chunk_y) = self
-                    .get_chunk_block_is_in(
-                        new_player.server_player.x.round() as u32,
-                        new_player.server_player.y.round() as u32,
-                    )
-                    .unwrap_or((0, 0));
-                let players_loading_old_chunk: Vec<&ClientConnection> = self
-                    .get_list_of_players_loading_chunk(old_chunk_x, old_chunk_y)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|conn| conn.id != new_player.id)
-                    .collect();
-                let players_loading_chunk: Vec<&ClientConnection> = self
-                    .get_list_of_players_loading_chunk(chunk_x, chunk_y)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|conn| conn.id != new_player.id)
-                    .collect();
-
-                let old_players: Vec<&ClientConnection> = players_loading_old_chunk
-                    .clone()
-                    .into_iter()
-                    .filter(|conn| !players_loading_chunk.contains(conn))
-                    .collect();
-                let new_players: Vec<&ClientConnection> = players_loading_chunk
-                    .clone()
-                    .into_iter()
-                    .filter(|conn| !players_loading_old_chunk.contains(conn))
-                    .collect();
-
-                for conn in old_players {
-                    encode_and_send!(
-                        to_network,
-                        PacketTypes::ServerPlayerLeaveLoaded {
-                            player_id: new_player.id,
-                            player_name: new_player.name.clone(),
-                        },
-                        conn.addr
-                    );
-                }
-                let mut update_queue: Vec<SocketAddr> = Vec::new();
-                for conn in players_loading_chunk {
-                    if new_players.contains(&conn) {
-                        encode_and_send!(
-                            to_network,
-                            PacketTypes::ServerPlayerEnterLoaded {
-                                player_id: new_player.id,
-                                player_name: new_player.name.clone(),
-                                pos_x: new_player.server_player.x,
-                                pos_y: new_player.server_player.y,
-                            },
-                            conn.addr
-                        );
-                    }
-                    update_queue.push(conn.addr);
-                }
-                update_queue.push(new_player.addr);
-                self.physics_update_queue.insert(
-                    new_player.id,
-                    PositionUpdate {
-                        pos_x: new_player.server_player.x,
-                        pos_y: new_player.server_player.y,
-                        recievers: update_queue,
-                    },
-                );
+                self.notify_player_moved(to_network.clone(), &new_player, old_x, old_y)?;
             }
             new_players.push(new_player);
         }
