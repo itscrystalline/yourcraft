@@ -191,11 +191,17 @@ impl Player {
         self.do_jump = false;
 
         self = self.do_fall(surrounding);
+        // void check
+        if self.y <= constants::RESPAWN_THRESHOLD {
+            self.y = -constants::RESPAWN_THRESHOLD;
+            self.x = self.x.max(0.0);
+        }
         match self.velocity.is_zero() && self.acceleration.is_zero() {
             true => (self, false),
             false => {
                 self.velocity = self.velocity.accelerate(self.acceleration);
                 self.x += self.velocity.x;
+
                 (self, true)
             }
         }
