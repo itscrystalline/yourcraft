@@ -151,7 +151,13 @@ impl Player {
         (self, has_changed)
     }
 
-    fn is_grounded(y: f32, surrounding: Surrounding) -> bool {
+    fn is_grounded(x: f32, y: f32, surrounding: Surrounding) -> bool {
+        let snap_x = x.round();
+        let direction = match (x - snap_x).partial_cmp(&0.0) {
+            Some(Ordering::Less) => Shift::Left,
+            Some(Ordering::Greater) => Shift::Right,
+            _ => Shift::None,
+        };
         let Surrounding {
             bottom_left,
             bottom_center,
@@ -164,11 +170,16 @@ impl Player {
                 None => false,
                 Some((_, _, block)) => is_solid(block),
             });
-        (bottom_left_solid || bottom_center_solid || bottom_right_solid) && y.round() == y
+        let considered_solid = match direction {
+            Shift::Left => bottom_left_solid || bottom_center_solid,
+            Shift::Right => bottom_right_solid || bottom_center_solid,
+            Shift::None => bottom_center_solid,
+        };
+        considered_solid && y.round() == y
     }
 
     pub fn do_fall(mut self, surrounding: Surrounding) -> Self {
-        match !Self::is_grounded(self.y, surrounding) {
+        match !Self::is_grounded(self.x, self.y, surrounding) {
             true => {
                 self.velocity.y = self.velocity.y.max(-constants::TERMINAL_VELOCITY);
                 self.y += self.velocity.y;
@@ -183,7 +194,7 @@ impl Player {
 
     pub fn do_move(mut self, surrounding: Surrounding) -> (Self, bool) {
         // jump
-        if self.do_jump && Self::is_grounded(self.y, surrounding) {
+        if self.do_jump && Self::is_grounded(self.x, self.y, surrounding) {
             self.acceleration.y = constants::INITIAL_JUMP_ACCEL;
             self.velocity.y = constants::INITIAL_JUMP_SPEED;
             self.y += self.velocity.y;
