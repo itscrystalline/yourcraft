@@ -394,6 +394,13 @@ impl World {
             master_seed,
             start.elapsed()
         );
+
+        let start = Instant::now();
+        while !world.to_update.is_empty() {
+            world.init_flow_water()?;
+        }
+        c_info!(to_console, "Flowing water took {:?}.", start.elapsed());
+
         Ok(world)
     }
 
@@ -742,6 +749,40 @@ impl World {
         })
     }
 
+    fn init_flow_water(&mut self) -> Result<(), WorldError> {
+        let water_to_update: HashSet<&(u32, u32, Block)> = self
+            .to_update
+            .par_iter()
+            .filter(|pos| pos.2 == Block::Water)
+            .collect();
+
+        let to_update: HashSet<(u32, u32)> = water_to_update
+            .par_iter()
+            .flat_map(|&&(x, y, bl)| {
+                let SurroundingBlocks {
+                    bottom,
+                    left,
+                    right,
+                    ..
+                } = self.get_neighbours(x, y);
+                [bottom, left, right, Some((x, y, bl))]
+            })
+            .filter_map(|maybe_block| {
+                if let Some((bl_x, bl_y, bl)) = maybe_block {
+                    if !is_solid(bl) {
+                        return Some((bl_x, bl_y));
+                    }
+                }
+                None
+            })
+            .collect();
+        self.to_update.retain(|pos| pos.2 != Block::Water);
+        for (x, y) in to_update {
+            self.set_block(x, y, Block::Water)?;
+        }
+        Ok(())
+    }
+
     async fn tick_water(&mut self, to_network: ToNetwork) -> Result<(), WorldError> {
         let water_to_update: HashSet<&(u32, u32, Block)> = self
             .to_update
@@ -751,18 +792,18 @@ impl World {
 
         let to_update: HashSet<(u32, u32)> = water_to_update
             .par_iter()
-            .flat_map(|&&(x, y, _)| {
+            .flat_map(|&&(x, y, bl)| {
                 let SurroundingBlocks {
                     bottom,
                     left,
                     right,
                     ..
                 } = self.get_neighbours(x, y);
-                [bottom, left, right]
+                [bottom, left, right, Some((x, y, bl))]
             })
             .filter_map(|maybe_block| {
                 if let Some((bl_x, bl_y, bl)) = maybe_block {
-                    if !is_solid(bl) && bl != Block::Water {
+                    if !is_solid(bl) {
                         return Some((bl_x, bl_y));
                     }
                 }
