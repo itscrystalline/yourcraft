@@ -333,7 +333,6 @@ pub async fn process_client_packet(
                 .get_list_of_players_loading_chunk(spawn_chunk_pos.0, spawn_chunk_pos.1)
                 .unwrap();
 
-            let mut immeadiate_players = vec![];
             for player in world.players.iter() {
                 encode_and_send!(
                     to_network,
@@ -354,21 +353,18 @@ pub async fn process_client_packet(
                         },
                         player.addr
                     );
-                    immeadiate_players.push(player);
+                    encode_and_send!(
+                        to_network,
+                        PacketTypes::ServerPlayerEnterLoaded {
+                            player_name: player.name.clone(),
+                            player_id: player.id,
+                            pos_x: player.server_player.x,
+                            pos_y: player.server_player.y
+                        },
+                        connection.addr
+                    );
                 }
             }
-            immeadiate_players.into_iter().for_each(|player| {
-                encode_and_send!(
-                    to_network,
-                    PacketTypes::ServerPlayerEnterLoaded {
-                        player_name: player.name.clone(),
-                        player_id: player.id,
-                        pos_x: player.server_player.x,
-                        pos_y: player.server_player.y
-                    },
-                    connection.addr
-                );
-            });
 
             world.players.push(connection);
         }

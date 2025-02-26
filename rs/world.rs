@@ -916,6 +916,14 @@ impl World {
                 encode_and_send!(
                     to_network,
                     PacketTypes::ServerPlayerLeaveLoaded {
+                        player_id: conn.id,
+                        player_name: conn.name.clone()
+                    },
+                    new_player.addr
+                );
+                encode_and_send!(
+                    to_network,
+                    PacketTypes::ServerPlayerLeaveLoaded {
                         player_id: new_player.id,
                         player_name: new_player.name.clone(),
                     },
@@ -924,6 +932,16 @@ impl World {
             });
             players_loading_chunk.into_iter().for_each(|conn| {
                 if new_players.contains(&conn) {
+                    encode_and_send!(
+                        to_network,
+                        PacketTypes::ServerPlayerEnterLoaded {
+                            player_id: conn.id,
+                            player_name: conn.name.clone(),
+                            pos_x: conn.server_player.x,
+                            pos_y: conn.server_player.y,
+                        },
+                        new_player.addr
+                    );
                     encode_and_send!(
                         to_network,
                         PacketTypes::ServerPlayerEnterLoaded {
