@@ -1,5 +1,5 @@
 use crate::console::ToConsole;
-use crate::player::{self, Player};
+use crate::player::Player;
 use crate::world::{Chunk, World, WorldError};
 use crate::{c_debug, c_error, c_info, c_warn, constants};
 use rand::prelude::*;
