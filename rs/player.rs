@@ -35,6 +35,7 @@ impl Acceleration {
 pub struct Player {
     pub x: f32,
     pub y: f32,
+    pub health: u8,
     pub hitbox_width: u32,
     pub hitbox_height: u32,
     pub velocity: Velocity,
@@ -89,6 +90,7 @@ impl Player {
         Ok(Player {
             x: highest_x as f32,
             y: (highest_y + 1) as f32,
+            health: 5,
             hitbox_width: constants::HITBOX_WIDTH,
             hitbox_height: constants::HITBOX_HEIGHT,
             velocity: Velocity::default(),
