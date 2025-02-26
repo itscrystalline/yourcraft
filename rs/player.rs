@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 
 use crate::{
     constants,
-    world::{is_solid, BlockPos, World, WorldError},
+    world::{is_solid, Block, BlockPos, World, WorldError},
 };
 #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
 pub struct Velocity {
@@ -41,6 +41,7 @@ pub struct Player {
     pub velocity: Velocity,
     pub acceleration: Acceleration,
     pub do_jump: bool,
+    pub inventory: [Option<Item>; 9],
 }
 
 #[derive(Clone, Copy)]
@@ -96,6 +97,7 @@ impl Player {
             velocity: Velocity::default(),
             acceleration: Acceleration::default(),
             do_jump: false,
+            inventory: [None; 9],
         })
     }
 
@@ -222,27 +224,43 @@ impl Player {
 }
 
 macro_rules! define_items {
-    ($($name:ident = ($id:expr, $is_block:expr)),* $(,)?) => {
+    ($($name:ident = ($id:expr, $block_match:expr)),* $(,)?) => {
+        #[derive(Debug, Clone, Copy, PartialEq)]
         pub enum Item {
             $($name = $id),*
         }
 
-        pub fn is_placable(item: Item) -> bool {
-            match item {
-                $(Item::$name => $is_block),*
+
+        impl From<u8> for Item {
+            fn from(id: u8) -> Self {
+                match id {
+                    $($id => Item::$name),*,
+                    _ => Item::Grass,
+                }
+            }
+        }
+
+        impl From<Item> for u8 {
+            fn from(item: Item) -> u8 { item as u8 }
+        }
+
+        impl From<Item> for Option<Block> {
+            fn from(item: Item) -> Option<Block> {
+                match item {
+                    $(Item::$name => $block_match),*
+                }
             }
         }
     }
 }
 
 define_items! {
-    Air = (0, true),
-    Grass = (1, true),
-    Stone = (2, true),
-    Wood = (3, true),
-    Leaves = (4, true),
-    Water = (5, true),
-    Pickaxe = (6, false),
-    Axe = (7, false),
-    Sword = (8, false)
+    Grass = (0, Some(Block::Grass)),
+    Stone = (1, Some(Block::Stone)),
+    Wood = (2, Some(Block::Wood)),
+    Leaves = (3, Some(Block::Leaves)),
+    WaterBucket = (4, Some(Block::Water)),
+    Pickaxe = (5, None),
+    Axe = (6, None),
+    Sword = (7, None)
 }
