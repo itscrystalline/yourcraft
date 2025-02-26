@@ -1,6 +1,6 @@
 use crate::console::ToConsole;
 use crate::network::{ClientConnection, PacketTypes, ToNetwork};
-use crate::player::{Player, Surrounding};
+use crate::player::{Item, Player, Surrounding};
 use crate::{c_debug, c_error, c_info, WorldType};
 use fast_poisson::Poisson;
 use itertools::Itertools;
@@ -82,7 +82,7 @@ pub struct Chunk {
 pub type BlockPos = (u32, u32, Block);
 
 macro_rules! define_blocks {
-    ($($name:ident = ($id:expr, $solid:expr)),* $(,)?) => {
+    ($($name:ident = ($id:expr, $solid:expr, $item:expr)),* $(,)?) => {
         #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash, EnumString)]
         pub enum Block {
             $($name = $id),*
@@ -104,6 +104,14 @@ macro_rules! define_blocks {
         pub fn is_solid(block: Block) -> bool {
             match block {
                 $(Block::$name => $solid),*
+            }
+        }
+
+        impl From<Block> for Option<Item> {
+            fn from(block: Block) -> Self {
+                match block {
+                    $(Block::$name => $item),*
+                }
             }
         }
     };
@@ -1060,10 +1068,10 @@ impl Chunk {
 }
 
 define_blocks! {
-    Air = (0, false),
-    Grass = (1, true),
-    Stone = (2, true),
-    Wood = (3, true),
-    Leaves = (4, true),
-    Water = (5, false),
+    Air = (0, false, None),
+    Grass = (1, true, Some(Item::Grass)),
+    Stone = (2, true, Some(Item::Stone)),
+    Wood = (3, true, Some(Item::Wood)),
+    Leaves = (4, true, Some(Item::Leaves)),
+    Water = (5, false, Some(Item::WaterBucket)),
 }
