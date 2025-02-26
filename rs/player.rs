@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, num::NonZeroU8};
 
 use crate::{
     constants,
@@ -42,6 +42,7 @@ pub struct Player {
     pub acceleration: Acceleration,
     pub do_jump: bool,
     pub inventory: [Option<ItemStack>; 9],
+    pub selected_slot: u8,
 }
 
 #[derive(Clone, Copy)]
@@ -108,6 +109,7 @@ impl Player {
             acceleration: Acceleration::default(),
             do_jump: false,
             inventory: [None; 9],
+            selected_slot: 0,
         })
     }
 
@@ -210,6 +212,50 @@ impl Player {
         (self, has_changed)
     }
 
+    pub fn get_current_itemstack(&self) -> Option<ItemStack> {
+        self.inventory[self.selected_slot as usize]
+    }
+
+    pub fn consume_current(&mut self) {
+        if let Some(current) = self.inventory[self.selected_slot as usize] {
+            self.inventory[self.selected_slot as usize] =
+                NonZeroU8::new(current.count.get() - 1).map(|new| current.with_count(new));
+        }
+    }
+
+    pub fn insert(&mut self, itemstack: ItemStack) -> Result<(), u8> {
+        let mut count_left = itemstack.count.get();
+        for stack in self.inventory.iter_mut() {
+            if count_left == 0 {
+                return Ok(());
+            }
+            match stack {
+                None => {
+                    *stack = Some(ItemStack {
+                        item: itemstack.item,
+                        count: NonZeroU8::new(count_left).unwrap(),
+                    });
+                    count_left = 0;
+                }
+                Some(stack) => {
+                    if stack.item == itemstack.item {
+                        match stack.count.checked_add(count_left) {
+                            Some(c) => {
+                                stack.count = c;
+                                count_left = 0;
+                            }
+                            None => {
+                                count_left = stack.count.get().wrapping_add(count_left + 1);
+                                stack.count = NonZeroU8::new(u8::MAX).unwrap();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Err(count_left)
+    }
+
     fn is_grounded(x: f32, y: f32, surrounding: Surrounding) -> bool {
         let snap_x = x.round();
         let direction = match (x - snap_x).partial_cmp(&0.0) {
@@ -272,7 +318,22 @@ impl Player {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ItemStack {
     pub item: Item,
-    pub count: u32,
+    pub count: NonZeroU8,
+}
+
+impl From<Item> for ItemStack {
+    fn from(item: Item) -> Self {
+        Self {
+            item,
+            count: NonZeroU8::new(1).unwrap(),
+        }
+    }
+}
+impl ItemStack {
+    pub fn with_count(mut self, count: NonZeroU8) -> Self {
+        self.count = count;
+        self
+    }
 }
 
 macro_rules! define_items {
@@ -281,7 +342,6 @@ macro_rules! define_items {
         pub enum Item {
             $($name = $id),*
         }
-
 
         impl From<u8> for Item {
             fn from(id: u8) -> Self {

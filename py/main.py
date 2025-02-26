@@ -223,9 +223,16 @@ def get_block(x, y) -> int:
 
 
 # Define placement range
-def place_in_range(x, y, d, b=2) -> bool:
+def place_in_range(x, y, d) -> bool:
     if (d[0] ** 2 + d[1] ** 2) <= 64 or (d[0] ** 2 + (d[1] - 1) ** 2) <= 64:
-        cliNet.send(network.ClientPlaceBlock(b, x, y))
+        cliNet.send(network.ClientPlaceBlock(x, y))
+        return True
+    return False
+
+
+def break_in_range(x, y, d) -> bool:
+    if (d[0] ** 2 + d[1] ** 2) <= 64 or (d[0] ** 2 + (d[1] - 1) ** 2) <= 64:
+        cliNet.send(network.ClientBreakBlock(x, y))
         return True
     return False
 
@@ -277,7 +284,6 @@ def main():
                     prev_direction = 1
             else:
                 if prev_direction != 0:
-                    print("stopped")
                     movement_update = True
                     need_update_pos = True
                     speed_update = 0
@@ -290,7 +296,7 @@ def main():
                 if NormalX >= 0 and NormalY >= 0:
                     dScreenMouse = ((MousePos[0] - screen_width / 2) / pixel_scaling,
                                     (MousePos[1] - screen_height / 2) / pixel_scaling)
-                    place_in_range(NormalX, NormalY, dScreenMouse, 2)
+                    place_in_range(NormalX, NormalY, dScreenMouse)
 
             if keys[currentPlayer.keys[3]]:  # Remove block
                 NormalX = int((position2D.x - screen_width / 2 + MousePos[0] + pixel_scaling / 2) // pixel_scaling)
@@ -299,7 +305,7 @@ def main():
                 if NormalX >= 0 and NormalY >= 0:
                     dScreenMouse = ((MousePos[0] - screen_width / 2) / pixel_scaling,
                                     (MousePos[1] - screen_height / 2) / pixel_scaling)
-                    place_in_range(NormalX, NormalY, dScreenMouse, 0)
+                    break_in_range(NormalX, NormalY, dScreenMouse)
 
             if keys[currentPlayer.keys[4]]:  # Jump
                 if not WasJump:

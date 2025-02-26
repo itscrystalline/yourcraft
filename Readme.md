@@ -121,7 +121,7 @@ kicked from the server.
 ✅✅ [S2C] ServerPlayerLeaveLoaded (player_name: str, player_id: int)                                                        
 🟨🟨 [S2C] ServerPlayerLeave (player_name: str, player_id: int)                                                              
 ✅✅ [C2S] ClientGoodbye ()                                                                                                 
-✅✅ [C2S] ClientPlaceBlock (block: Block Enum as int, x: int, y: int)                                                      
+✅✅ [C2S] ClientPlaceBlock (x: int, y: int)
 ✅✅ [S2C] ServerUpdateBlock (block: Block Enum as int, x: int, y: int)                                                     
 ✅✅ [C2S] ClientPlayerXVelocity (vel_x: float)                                                                                 
 ✅✅ [C2S] ClientPlayerJump ()
@@ -132,6 +132,11 @@ kicked from the server.
 ✅✅ [C2S] ClientHeartbeat
 🟨⬛️ [S2C] ServerSendMessage (player_id: int, player_name: str, msg: str)
 ✅✅ [C2S] ClientSendMessage (msg: str)
+✅✅ [C2S] ClientBreakBlock (x: int, y: int)
+⬛️⬛️ [C2S] ClientAttack (x: float, y: float)
+⬛️⬛️ [C2S] ClientChangeSlot (slot: int)
+⬛️⬛️ [S2C] ServerUpdateHealth (health: int)
+🟨⬛️ [S2C] ServerUpdateInventory (inv: list of ItemStack)
 ```
 
 ### Lifecycle Overview

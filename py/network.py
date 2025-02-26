@@ -65,8 +65,13 @@ class ClientRequestChunk(Packet):
 
 
 class ClientPlaceBlock(Packet):
-    def __init__(self, block, x, y):
-        self.block: int = block
+    def __init__(self, x, y):
+        self.x: int = x
+        self.y: int = y
+
+
+class ClientBreakBlock(Packet):
+    def __init__(self, x, y):
         self.x: int = x
         self.y: int = y
 
