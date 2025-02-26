@@ -55,7 +55,7 @@ def load_resource(name):
 
 
 BlockType = list(
-    map(load_resource, ["grassblock.png", "stoneblock.png", "woodblock.png", "leaves.png", "waterblock.png","blackground(1).png"]))
+    map(load_resource, ["grassblock.png", "stoneblock.png", "woodblock.png", "leaves.png", "waterblock.png","background.png"]))
 
 # Set connection
 cliNet = network.ServerConnection("127.0.0.1")
@@ -202,7 +202,8 @@ def sync_data():
 
                 protocolValue.clear()
 
-
+bg = pygame.image.load("py/resources/background.png")
+screen.blit(bg,(0,0))
 # Get block
 def get_block(x, y) -> int:
     return World[(int(x // (16 * pixel_scaling)), int(y // (16 * pixel_scaling)))] \
@@ -294,9 +295,7 @@ def main():
             WorldDelta.vy -= speed * dt
             movement_update = True
 
-        # Reset screen
-        # mrbeast
-        screen.fill((130, 200, 229))
+        
 
         # Move world
         if movement_update:
