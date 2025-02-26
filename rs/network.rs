@@ -143,6 +143,14 @@ pub enum PacketTypes {
     },
     ServerHeartbeat {},
     ClientHeartbeat {},
+    ClientSendMessage {
+        msg: String
+    },
+    ServerSendMessage {
+        player_name: String,
+        player_id: u32,
+        msg: String
+    }
 }
 
 #[macro_export]
@@ -554,6 +562,31 @@ pub async fn process_client_packet(
                 player_conn,
                 {
                     player_conn.connection_alive = true;
+                }
+            )
+        }
+        PacketTypes::ClientSendMessage {
+            msg
+        } => {
+            assert_player_exists!(
+                to_console,
+                world,
+                addr,
+                par_iter,
+                find_any,
+                player_conn,
+                {
+                    for player in world.players.iter() {
+                        encode_and_send!(
+                        to_network,
+                        PacketTypes::ServerSendMessage {
+                            player_name: player_conn.name.clone(),
+                            player_id: player_conn.id,
+                            msg: msg.clone()
+                        },
+                        player.addr
+                        );
+                    }
                 }
             )
         }
