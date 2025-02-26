@@ -77,6 +77,16 @@ impl From<&[Option<BlockPos>]> for Surrounding {
         }
     }
 }
+macro_rules! map_surrounding_solid {
+    ($surrounding:expr, [$($field:ident),*]) => {{
+        let Surrounding { $($field),*, .. } = $surrounding;
+
+        [$($field),*].map(|opt| match opt {
+            None => false,
+            Some((_, _, block)) => is_solid(block),
+        })
+    }};
+}
 
 #[derive(PartialEq)]
 enum Shift {
@@ -111,20 +121,8 @@ impl Player {
             _ => Shift::None,
         };
 
-        let Surrounding {
-            top_left,
-            top_center,
-            top_right,
-            bottom_left,
-            bottom_center,
-            bottom_right,
-            left_up,
-            left_down,
-            right_up,
-            right_down,
-            ..
-        } = surrounding;
-        let [top_left, top_center, top_right, bottom_left, bottom_center, bottom_right, left_up, left_down, right_up, right_down] =
+        let [top_left, top_center, top_right, bottom_left, bottom_center, bottom_right, left_up, left_down, right_up, right_down, upper_body, lower_body] = map_surrounding_solid!(
+            surrounding,
             [
                 top_left,
                 top_center,
@@ -136,11 +134,10 @@ impl Player {
                 left_down,
                 right_up,
                 right_down,
+                upper_body,
+                lower_body
             ]
-            .map(|opt| match opt {
-                None => false,
-                Some((_, _, block)) => is_solid(block),
-            });
+        );
 
         let (bottom, top) = match direction {
             Shift::Left => (bottom_left || bottom_center, top_left || top_center),
@@ -164,6 +161,52 @@ impl Player {
             has_changed = true;
         }
 
+        match (lower_body, upper_body) {
+            (false, false) => (),
+            (true, false) => {
+                if !top_center {
+                    self.y = snap_y + 1.0;
+                    has_changed = true;
+                }
+            }
+            (false, true) => {
+                if !bottom_center {
+                    self.y = snap_y - 1.0;
+                    has_changed = true;
+                }
+            }
+            (true, true) => {
+                match (
+                    top_left || left_up,
+                    left_down || bottom_left,
+                    top_right || right_up,
+                    right_down || bottom_right,
+                ) {
+                    (true, _, _, _) => {
+                        self.x = snap_x - 1.0;
+                        self.y = snap_y + 1.0;
+                        has_changed = true;
+                    }
+                    (_, true, _, _) => {
+                        self.x = snap_x - 1.0;
+                        self.y = snap_y - 1.0;
+                        has_changed = true;
+                    }
+                    (_, _, true, _) => {
+                        self.x = snap_x + 1.0;
+                        self.y = snap_y + 1.0;
+                        has_changed = true;
+                    }
+                    (_, _, _, true) => {
+                        self.x = snap_x + 1.0;
+                        self.y = snap_y - 1.0;
+                        has_changed = true;
+                    }
+                    _ => (),
+                }
+            }
+        }
+
         (self, has_changed)
     }
 
@@ -174,18 +217,9 @@ impl Player {
             Some(Ordering::Greater) => Shift::Right,
             _ => Shift::None,
         };
-        let Surrounding {
-            bottom_left,
-            bottom_center,
-            bottom_right,
-            ..
-        } = surrounding;
 
         let [bottom_left_solid, bottom_center_solid, bottom_right_solid] =
-            [bottom_left, bottom_center, bottom_right].map(|opt| match opt {
-                None => false,
-                Some((_, _, block)) => is_solid(block),
-            });
+            map_surrounding_solid!(surrounding, [bottom_left, bottom_center, bottom_right]);
         let considered_solid = match direction {
             Shift::Left => bottom_left_solid || bottom_center_solid,
             Shift::Right => bottom_right_solid || bottom_center_solid,
