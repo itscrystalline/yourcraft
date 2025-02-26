@@ -1,7 +1,7 @@
 use crate::console::ToConsole;
 use crate::player::{self, Player};
 use crate::world::{Chunk, World, WorldError};
-use crate::{c_debug, c_error, c_info, c_warn};
+use crate::{c_debug, c_error, c_info, c_warn, constants};
 use rand::prelude::*;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -450,6 +450,24 @@ pub async fn process_client_packet(
                     c_error!(to_console, "player {} (addr: {}) tried to place a block in a position they themselves have not loaded!", player_conn.name, player_conn.addr);
                     return Ok(());
                 }
+                let (player_x, player_y, x_i, y_i) = (
+                    player_conn.server_player.x.round() as i32,
+                    player_conn.server_player.y.round() as i32,
+                    x as i32,
+                    y as i32,
+                );
+
+                if ((x_i - player_x).pow(2) + (y_i - player_y).pow(2))
+                    > constants::MAX_INTERACT_RANGE.pow(2) as i32
+                {
+                    c_warn!(
+                        to_console,
+                        "player {} tried to interact outside of their max range!",
+                        player_conn.name
+                    );
+                    return Ok(());
+                }
+
                 match world
                     .set_block_and_notify(to_network.clone(), x, y, block.into())
                     .await

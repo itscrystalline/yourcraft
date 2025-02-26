@@ -58,16 +58,19 @@ MousePos = pygame.mouse.get_pos()
 
 
 # Block Types
-def load_resource(name):
+def load(name):
     file = f"{os.path.dirname(os.path.realpath(__file__))}/resources/{name}"
-    pic = pygame.image.load(file)
+    return pygame.image.load(file) 
+
+def load_resource(name):
+    pic = load(name)
     pic = pygame.transform.scale_by(pic, 2).convert_alpha()
     return pic
 
 
 BlockType = list(
-    map(load_resource,
-        ["grassblock.png", "stoneblock.png", "woodblock.png", "leaves.png", "waterblock.png", "background.png"]))
+    map(load_resource, ["grassblock.png", "stoneblock.png", "woodblock.png", "leaves.png", "waterblock.png"]))
+bg = load("background2.png").convert_alpha()
 
 # Set connection
 cliNet = network.ServerConnection("127.0.0.1")
@@ -213,9 +216,7 @@ def sync_data():
 
                 protocolValue.clear()
 
-
 bg = pygame.image.load("resources/background.png").convert_alpha()
-
 
 # Get block
 def get_block(x, y) -> int:
