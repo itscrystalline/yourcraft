@@ -145,12 +145,6 @@ impl Player {
             Shift::Right => (bottom_center || bottom_right, top_center || top_right),
         };
 
-        let (bottom, top) = match direction {
-            Shift::Left => (bottom_left || bottom_center, top_left || top_center),
-            Shift::None => (bottom_center, top_center),
-            Shift::Right => (bottom_center || bottom_right, top_center || top_right),
-        };
-
         let mut has_changed = false;
 
         if self.y != snap_y && ((bottom && self.velocity.y < 0.0) || (top && self.velocity.y > 0.0))
