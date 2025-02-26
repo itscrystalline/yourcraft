@@ -125,10 +125,12 @@ def NetworkThread():
                 except KeyError:
                     pass
             elif receiving['t'] == network.UPDATE_BLOCK:
-                if (UpdateChunk := World.get((int(receiving['data']['x'] // (16 * pixel_scaling)),
-                                             int(receiving['data']['y'] // (16 * pixel_scaling))))) is not None:
-                    UpdateChunk[(15 - int(receiving['data']['x'] % (16 * pixel_scaling) // pixel_scaling),
-                                 15 - int(receiving['data']['y'] % (16 * pixel_scaling) // pixel_scaling))] = \
+                if (UpdateChunk := World.get((int(receiving['data']['x'] // 16),
+                                             int(receiving['data']['y'] // 16)))) is not None:
+                    print((15 - int(receiving['data']['x'] % 16 // pixel_scaling),
+                                 15 - int(receiving['data']['y'] % 16 // pixel_scaling)))
+                    UpdateChunk[(15 - int(receiving['data']['x'] % 16),
+                                 15 - int(receiving['data']['y'] % 16))] = \
                                 receiving['data']['block']
 
 
@@ -181,11 +183,6 @@ def draw_other_players():
         eachPlayer['pos_x'] * pixel_scaling - position2D.x + screen_width / 2 - pixel_scaling / 2,
         position2D.y - eachPlayer['pos_y'] * pixel_scaling + screen_height / 2 - pixel_scaling, pixel_scaling,
         2 * pixel_scaling))
-        print("start", (eachPlayer['pos_x'], eachPlayer['pos_y']))
-        print((position2D.x / pixel_scaling, position2D.y / pixel_scaling))
-        print((eachPlayer['pos_x'] * pixel_scaling - position2D.x + screen_width / 2 - pixel_scaling / 2,
-        eachPlayer['pos_y'] * pixel_scaling - position2D.y + screen_height / 2 - pixel_scaling),
-              "end")
 
 
 # Sync Server
