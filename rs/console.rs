@@ -47,6 +47,7 @@ pub enum Command {
     GetBlock { x: u32, y: u32 },
     SetSpawn(u32),
     SetSpawnRange(NonZeroU32),
+    InventorySee(u32),
 }
 
 #[derive(Error, Debug)]
@@ -150,6 +151,10 @@ impl FromStr for Command {
                     err: ArgParseError::ZeroInt,
                 })?;
                 Ok(Command::SetSpawnRange(nonzero_range))
+            }
+            "invsee" | "inventorysee" => {
+                let id = next_type_token_or_err!(tokens, "player_id", u32);
+                Ok(Command::InventorySee(id))
             }
             c => Err(CommandError::InvalidCommand(c.to_string())),
         }
@@ -549,7 +554,7 @@ pub async fn process_command(
 ) -> io::Result<bool> {
     match command {
         Command::Help => {
-            c_info!(to_console, "Commands: help/h/?, exit/stop, tps, mspt, players/p, kick (player_id), teleport/tp (player_id, x, y) block_at/get (x, y), set (x, y, Block), spawn (x), spawn_range (range)");
+            c_info!(to_console, "Commands: help/h/?, exit/stop, tps, mspt, players/p, respawn (player_id), kick (player_id), teleport/tp (player_id, x, y) block_at/get (x, y), set (x, y, Block), spawn (x), spawn_range (range), inventorysee/invsee (player_id)");
         }
         Command::Shutdown => {
             return Ok(true);
@@ -697,6 +702,21 @@ pub async fn process_command(
             ),
             Err(e) => c_error!(to_console, "cannot set spawn range to {range}: {e}"),
         },
+        Command::InventorySee(id) => {
+            match world.players.par_iter().find_any(|conn| conn.id == id) {
+                Some(player) => {
+                    let player_inv = player.server_player.inventory;
+                    c_info!(
+                        to_console,
+                        "Inventory of {} (id {}): {:?}",
+                        player.name,
+                        player.id,
+                        player_inv
+                    );
+                }
+                None => c_error!(to_console, "Player doesn't exist."),
+            }
+        }
     }
     Ok(false)
 }

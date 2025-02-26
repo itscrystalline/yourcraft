@@ -41,7 +41,7 @@ pub struct Player {
     pub velocity: Velocity,
     pub acceleration: Acceleration,
     pub do_jump: bool,
-    pub inventory: [Option<Item>; 9],
+    pub inventory: [Option<ItemStack>; 9],
 }
 
 #[derive(Clone, Copy)]
@@ -269,6 +269,12 @@ impl Player {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ItemStack {
+    pub item: Item,
+    pub count: u32,
+}
+
 macro_rules! define_items {
     ($($name:ident = ($id:expr, $block_match:expr)),* $(,)?) => {
         #[derive(Debug, Clone, Copy, PartialEq)]
@@ -305,8 +311,9 @@ define_items! {
     Stone = (1, Some(Block::Stone)),
     Wood = (2, Some(Block::Wood)),
     Leaves = (3, Some(Block::Leaves)),
-    WaterBucket = (4, Some(Block::Water)),
-    Pickaxe = (5, None),
-    Axe = (6, None),
-    Sword = (7, None)
+    Bucket = (4, None),
+    WaterBucket = (5, Some(Block::Water)),
+    Pickaxe = (6, None),
+    Axe = (7, None),
+    Sword = (8, None)
 }
