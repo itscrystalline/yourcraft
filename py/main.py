@@ -204,8 +204,8 @@ def sync_data():
 
                 protocolValue.clear()
 
-bg = pygame.image.load("py/resources/background.png")
-screen.blit(bg,(0,0))
+bg = pygame.image.load("resources/background.png").convert_alpha()
+
 # Get block
 def get_block(x, y) -> int:
     return World[(int(x // (16 * pixel_scaling)), int(y // (16 * pixel_scaling)))] \
@@ -317,6 +317,9 @@ def main():
             if need_update_pos:
                 print("sending velocity")
                 cliNet.send(network.ClientPlayerXVelocity(speed_update / pixel_scaling))
+
+        # Draw background
+        screen.blit(bg, (0, 0))
 
         # Draw world (visible chunks)
         draw_world(chunkCoord)
