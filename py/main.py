@@ -55,7 +55,7 @@ def load_resource(name):
 
 
 BlockType = list(
-    map(load_resource, ["grassblock.png", "stoneblock.png", "woodblock.png", "leaves.png", "waterblock.png"]))
+    map(load_resource, ["grassblock.png", "stoneblock.png", "woodblock.png", "leaves.png", "waterblock.png","blackground(1).png"]))
 
 # Set connection
 cliNet = network.ServerConnection("127.0.0.1")
@@ -298,6 +298,7 @@ def main():
             movement_update = True
 
         # Reset screen
+        # mrbeast
         screen.fill((130, 200, 229))
 
         # Move world
