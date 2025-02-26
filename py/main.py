@@ -15,12 +15,12 @@ pygame.init()
 screen_size = pygame.display.get_desktop_sizes()[0]
 screen_width = screen_size[0]
 screen_height = screen_size[1]
-screen = pygame.display.set_mode((screen_width, screen_height), pygame.SRCALPHA | pygame.HWSURFACE | pygame.DOUBLEBUF | pygame.RESIZABLE, vsync=1)
+screen = pygame.display.set_mode((screen_width, screen_height),
+                                 pygame.SRCALPHA | pygame.HWSURFACE | pygame.DOUBLEBUF | pygame.RESIZABLE, vsync=1)
 pygame.display.set_caption("Pygame Initialization Example")
 
 # Set pixel scaling
 pixel_scaling = 20
-
 
 # Clock
 clock = pygame.time.Clock()
@@ -54,7 +54,8 @@ def load_resource(name):
     return pic
 
 
-BlockType = list(map(load_resource, ["grassblock.png", "stoneblock.png", "woodblock.png", "leaves.png", "waterblock.png"]))
+BlockType = list(
+    map(load_resource, ["grassblock.png", "stoneblock.png", "woodblock.png", "leaves.png", "waterblock.png"]))
 
 # Set connection
 cliNet = network.ServerConnection("127.0.0.1")
@@ -80,6 +81,7 @@ ReadyToUpdate = {}
 
 running = True
 
+
 def NetworkThread():
     global World, position2D, netThread, running
 
@@ -102,13 +104,17 @@ def NetworkThread():
                 chunk_coord = (updated_chunk['chunk_x'], updated_chunk['chunk_y'])
                 World[chunk_coord] = {}
                 for i in range(0, updated_chunk['blocks'].__len__()):
-                    World[chunk_coord][(i % 16, i // 16)] = updated_chunk['blocks'][updated_chunk['blocks'].__len__() - 1 - i]
+                    World[chunk_coord][(i % 16, i // 16)] = updated_chunk['blocks'][
+                        updated_chunk['blocks'].__len__() - 1 - i]
             elif receiving['t'] == network.PLAYER_UPDATE_POS:
                 receivedPlayerID = receiving['data']['player_id']
                 if receivedPlayerID == currentPlayer.player_id:
                     if network.PLAYER_UPDATE_POS not in ReadyToUpdate:
                         ReadyToUpdate[network.PLAYER_UPDATE_POS] = {}
                     ReadyToUpdate[network.PLAYER_UPDATE_POS][receivedPlayerID] = receiving['data']
+                elif otherPlayers.get(receivedPlayerID) is not None:
+                    otherPlayers[receivedPlayerID] = receiving['data']
+                    del otherPlayers[receivedPlayerID]['player_id']
             elif receiving['t'] == network.PLAYER_ENTER_LOAD:
                 otherPlayers[receiving['data']['player_id']] = receiving['data']
                 del otherPlayers[receiving['data']['player_id']]['player_id']
@@ -118,6 +124,12 @@ def NetworkThread():
                     del otherPlayers[receiving['data']['player_id']]
                 except KeyError:
                     pass
+            elif receiving['t'] == network.UPDATE_BLOCK:
+                if (UpdateChunk := World.get((int(receiving['data']['x'] // (16 * pixel_scaling)),
+                                             int(receiving['data']['y'] // (16 * pixel_scaling))))) is not None:
+                    UpdateChunk[(15 - int(receiving['data']['x'] % (16 * pixel_scaling) // pixel_scaling),
+                                 15 - int(receiving['data']['y'] % (16 * pixel_scaling) // pixel_scaling))] = \
+                                receiving['data']['block']
 
 
 # Draw world
@@ -146,8 +158,10 @@ def draw_world(chunkCoord):
             if loadChunk in World:
                 for blockPos, blockType in World[loadChunk].items():
                     blockScreenPos = (
-                        loadChunk[0] * 16 * pixel_scaling - blockPos[0] * pixel_scaling + WorldPosition.x + 14.5 * pixel_scaling + screen_width / 2,
-                        -loadChunk[1] * 16 * pixel_scaling + blockPos[1] * pixel_scaling - WorldPosition.y - 15 * pixel_scaling + screen_height / 2
+                        loadChunk[0] * 16 * pixel_scaling - blockPos[
+                            0] * pixel_scaling + WorldPosition.x + 14.5 * pixel_scaling + screen_width / 2,
+                        -loadChunk[1] * 16 * pixel_scaling + blockPos[
+                            1] * pixel_scaling - WorldPosition.y - 15 * pixel_scaling + screen_height / 2
                     )
                     if blockType > 0:
                         screen.blit(BlockType[blockType - 1], (blockScreenPos[0], blockScreenPos[1]))
@@ -159,13 +173,20 @@ def draw_world(chunkCoord):
                 World[loadChunk] = {}
                 cliNet.send(network.ClientRequestChunk(loadChunk[0], loadChunk[1]))
 
+
 # Draw other players
 def draw_other_players():
     for eachPlayer in otherPlayers.values():
-        pygame.draw.rect(screen, WHITE, (position2D.x - eachPlayer['pos_x'] * pixel_scaling - pixel_scaling/2, position2D.y - eachPlayer['pos_y'] * pixel_scaling + screen_height / 2 - pixel_scaling, pixel_scaling, 2 * pixel_scaling))
-        # print("start",(eachPlayer['pos_x'], eachPlayer['pos_y']))
-        # print((position2D.x / pixel_scaling, position2D.y / pixel_scaling))
-        # print((eachPlayer['pos_x'] * pixel_scaling - position2D.x, eachPlayer['pos_y'] * pixel_scaling - position2D.y),"end")
+        pygame.draw.rect(screen, WHITE, (
+        eachPlayer['pos_x'] * pixel_scaling - position2D.x + screen_width / 2 - pixel_scaling / 2,
+        position2D.y - eachPlayer['pos_y'] * pixel_scaling + screen_height / 2 - pixel_scaling, pixel_scaling,
+        2 * pixel_scaling))
+        print("start", (eachPlayer['pos_x'], eachPlayer['pos_y']))
+        print((position2D.x / pixel_scaling, position2D.y / pixel_scaling))
+        print((eachPlayer['pos_x'] * pixel_scaling - position2D.x + screen_width / 2 - pixel_scaling / 2,
+        eachPlayer['pos_y'] * pixel_scaling - position2D.y + screen_height / 2 - pixel_scaling),
+              "end")
+
 
 # Sync Server
 def sync_data():
@@ -184,10 +205,12 @@ def sync_data():
 
                 protocolValue.clear()
 
+
 # Get block
 def get_block(x, y) -> int:
-    return World [(int(x // (16 * pixel_scaling)), int(y // (16 * pixel_scaling)))] \
+    return World[(int(x // (16 * pixel_scaling)), int(y // (16 * pixel_scaling)))] \
         [(15 - int(x % (16 * pixel_scaling) // pixel_scaling), 15 - int(y % (16 * pixel_scaling) // pixel_scaling))]
+
 
 # Game loop
 def main():
@@ -213,7 +236,8 @@ def main():
         keys = pygame.key.get_pressed()
 
         chunkCoord = (int(position2D.x // (16 * pixel_scaling)), int(position2D.y // (16 * pixel_scaling)))
-        chunkPos = (15 - int(position2D.x % (16 * pixel_scaling) // pixel_scaling), 15 - int(position2D.y % (16 * pixel_scaling) // pixel_scaling))
+        chunkPos = (15 - int(position2D.x % (16 * pixel_scaling) // pixel_scaling),
+                    15 - int(position2D.y % (16 * pixel_scaling) // pixel_scaling))
 
         need_update_pos = False
         speed_update = 0
@@ -246,12 +270,14 @@ def main():
                 World[chunkCoord] = {}
             if World[chunkCoord][chunkPos] != 2:
                 World[chunkCoord][chunkPos] = 2
-                cliNet.send(network.ClientPlaceBlock(2, int(position2D.x//pixel_scaling), int(position2D.y//pixel_scaling)))
+                cliNet.send(
+                    network.ClientPlaceBlock(2, int(position2D.x // pixel_scaling), int(position2D.y // pixel_scaling)))
         if keys[currentPlayer.keys[3]]:  # Remove block
             if chunkCoord in World and World.get(chunkCoord).get(chunkPos) is not None:
                 if World[chunkCoord][chunkPos] != 0:
                     World[chunkCoord][chunkPos] = 0
-                    cliNet.send(network.ClientPlaceBlock(0, int(position2D.x // pixel_scaling), int(position2D.y // pixel_scaling)))
+                    cliNet.send(network.ClientPlaceBlock(0, int(position2D.x // pixel_scaling),
+                                                         int(position2D.y // pixel_scaling)))
         if keys[currentPlayer.keys[4]]:  # Jump
             if not WasJump:
                 cliNet.send(network.ClientPlayerJump())
@@ -289,7 +315,8 @@ def main():
         draw_other_players()
 
         # Draw player
-        pygame.draw.rect(screen, WHITE, (screen_width / 2 - pixel_scaling/2, screen_height / 2 - pixel_scaling, pixel_scaling, 2 * pixel_scaling))
+        pygame.draw.rect(screen, WHITE, (
+        screen_width / 2 - pixel_scaling / 2, screen_height / 2 - pixel_scaling, pixel_scaling, 2 * pixel_scaling))
 
         # Debug FPS and Position
         screen.blit(font.render(f"{clock.get_fps():.2f} FPS", 1, WHITE), (0, 0))
@@ -297,6 +324,7 @@ def main():
 
         # Update the display
         pygame.display.update()
+
 
 # Quit Pygame
 if __name__ == '__main__':
