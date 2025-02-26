@@ -45,17 +45,23 @@ World = {}
 WorldPosition = classic_component.Position2D()
 WorldDelta = classic_component.Velocity2D()
 
+# MousePos
+MousePos = pygame.mouse.get_pos()
 
 # Block Types
-def load_resource(name):
+def load(name):
     file = f"{os.path.dirname(os.path.realpath(__file__))}/resources/{name}"
-    pic = pygame.image.load(file)
+    return pygame.image.load(file) 
+
+def load_resource(name):
+    pic = load(name)
     pic = pygame.transform.scale_by(pic, 2).convert_alpha()
     return pic
 
 
 BlockType = list(
-    map(load_resource, ["grassblock.png", "stoneblock.png", "woodblock.png", "leaves.png", "waterblock.png","blackground(1).png"]))
+    map(load_resource, ["grassblock.png", "stoneblock.png", "woodblock.png", "leaves.png", "waterblock.png"]))
+bg = load("background2.png").convert_alpha()
 
 # Set connection
 cliNet = network.ServerConnection("127.0.0.1")
@@ -202,18 +208,24 @@ def sync_data():
 
                 protocolValue.clear()
 
-
 # Get block
 def get_block(x, y) -> int:
     return World[(int(x // (16 * pixel_scaling)), int(y // (16 * pixel_scaling)))] \
         [(15 - int(x % (16 * pixel_scaling) // pixel_scaling), 15 - int(y % (16 * pixel_scaling) // pixel_scaling))]
 
+# Define placement range
+def place_in_range(x, y, d, b = 2) -> bool:
+    if (d[0]**2 + d[1]**2) <= 64 or (d[0]**2 + (d[1]-1)**2) <= 64:
+        cliNet.send(network.ClientPlaceBlock(b, x, y))
+        return True
+    return False
 
 # Game loop
 def main():
-    global running, screen_size, screen_width, screen_height, WasJump, prev_direction
+    global running, screen_size, screen_width, screen_height, WasJump, prev_direction, MousePos
     while running:
         dt = clock.tick(50) / 1000  # Calculate time per frame
+        MousePos = pygame.mouse.get_pos()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 cliNet.send(network.ClientGoodbye())
@@ -262,19 +274,23 @@ def main():
                 speed_update = 0
                 prev_direction = 0
 
-        if keys[currentPlayer.keys[2]] and chunkCoord[0] >= 0 and chunkCoord[1] >= 0:  # Place block
-            if chunkCoord not in World:
-                World[chunkCoord] = {}
-            if World[chunkCoord][chunkPos] != 2:
-                World[chunkCoord][chunkPos] = 2
-                cliNet.send(
-                    network.ClientPlaceBlock(2, int(position2D.x // pixel_scaling), int(position2D.y // pixel_scaling)))
+        if keys[currentPlayer.keys[2]]:  # Place block
+            NormalX = int((position2D.x - screen_width/2 + MousePos[0] + pixel_scaling/2) // pixel_scaling)
+            NormalY = int((position2D.y + screen_height/2 - MousePos[1] + pixel_scaling) // pixel_scaling)
+            print(NormalX, NormalY)
+            if NormalX >= 0 and NormalY >= 0:
+                dScreenMouse = ((MousePos[0] - screen_width/2) / pixel_scaling,
+                                (MousePos[1] - screen_height/2) / pixel_scaling)
+                place_in_range(NormalX, NormalY, dScreenMouse, 2)
+
         if keys[currentPlayer.keys[3]]:  # Remove block
-            if chunkCoord in World and World.get(chunkCoord).get(chunkPos) is not None:
-                if World[chunkCoord][chunkPos] != 0:
-                    World[chunkCoord][chunkPos] = 0
-                    cliNet.send(network.ClientPlaceBlock(0, int(position2D.x // pixel_scaling),
-                                                         int(position2D.y // pixel_scaling)))
+            NormalX = int((position2D.x - screen_width / 2 + MousePos[0] + pixel_scaling/2) // pixel_scaling)
+            NormalY = int((position2D.y + screen_height / 2 - MousePos[1] + pixel_scaling) // pixel_scaling)
+            print(NormalX, NormalY)
+            if NormalX >= 0 and NormalY >= 0:
+                dScreenMouse = ((MousePos[0] - screen_width / 2) / pixel_scaling,
+                                (MousePos[1] - screen_height / 2) / pixel_scaling)
+                place_in_range(NormalX, NormalY, dScreenMouse, 0)
         if keys[currentPlayer.keys[4]]:  # Jump
             if not WasJump:
                 cliNet.send(network.ClientPlayerJump())
@@ -294,9 +310,7 @@ def main():
             WorldDelta.vy -= speed * dt
             movement_update = True
 
-        # Reset screen
-        # mrbeast
-        screen.fill((130, 200, 229))
+        
 
         # Move world
         if movement_update:
@@ -305,6 +319,9 @@ def main():
             if need_update_pos:
                 print("sending velocity")
                 cliNet.send(network.ClientPlayerXVelocity(speed_update / pixel_scaling))
+
+        # Draw background
+        screen.blit(bg, (0, 0))
 
         # Draw world (visible chunks)
         draw_world(chunkCoord)
