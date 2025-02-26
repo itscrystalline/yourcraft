@@ -220,3 +220,29 @@ impl Player {
         }
     }
 }
+
+macro_rules! define_items {
+    ($($name:ident = ($id:expr, $is_block:expr)),* $(,)?) => {
+        pub enum Item {
+            $($name = $id),*
+        }
+
+        pub fn is_placable(item: Item) -> bool {
+            match item {
+                $(Item::$name => $is_block),*
+            }
+        }
+    }
+}
+
+define_items! {
+    Air = (0, true),
+    Grass = (1, true),
+    Stone = (2, true),
+    Wood = (3, true),
+    Leaves = (4, true),
+    Water = (5, true),
+    Pickaxe = (6, false),
+    Axe = (7, false),
+    Sword = (8, false)
+}
