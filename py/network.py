@@ -18,6 +18,8 @@ PLAYER_UPDATE_POS = "ServerPlayerUpdatePos"
 KICK = "ServerKick"
 HEARTBEAT_SERVER = "ServerHeartbeat"
 HEARTBEAT_CLIENT = 18
+CLIENT_MESSAGE = 19
+SERVER_MESSAGE = "ServerSendMessage"
 
 
 class Packet:
@@ -36,7 +38,7 @@ class ServerConnection:
         self.socket.sendto(packet.serialize(), self.ip_port)
 
     def recv(self):
-        packet = pickle.loads(self.socket.recv(1024*16))
+        packet = pickle.loads(self.socket.recv(1024 * 16))
         return {
             "t": next(iter(packet.keys())),
             "data": next(iter(packet.values()))
@@ -82,6 +84,11 @@ class ClientUnloadChunk(Packet):
     def __init__(self, x, y):
         self.chunk_coords_x = x
         self.chunk_coords_y = y
+
+
+class ClientSendMessage(Packet):
+    def __init__(self, msg):
+        self.msg = msg
 
 
 def test():
