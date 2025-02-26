@@ -129,7 +129,9 @@ kicked from the server.
 ✅✅ [S2C] ServerPlayerUpdatePos (player_id: int, pos_x: float, pos_y: float)                                               
 ✅✅ [S2C] ServerKick (msg: str)                                                                                            
 ✅✅ [S2C] ServerHeartbeat                                                                                                  
-✅✅ [C2S] ClientHeartbeat                                                                                                  
+✅✅ [C2S] ClientHeartbeat
+🟨⬛️ [S2C] ServerSendMessage (player_id: int, player_name: str, msg: str)
+✅✅ [C2S] ClientSendMessage (msg: str)
 ```
 
 ### Lifecycle Overview

@@ -567,6 +567,7 @@ pub async fn process_client_packet(
         }
         PacketTypes::ClientSendMessage { msg } => {
             assert_player_exists!(to_console, world, addr, par_iter, find_any, player_conn, {
+                c_info!(to_console, "[CHAT] <{}> {}", player_conn.name, msg);
                 world.players.iter().for_each(|player| {
                     encode_and_send!(
                         to_network,
