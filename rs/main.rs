@@ -3,7 +3,6 @@ use clap::{Parser, Subcommand};
 use console::Stats;
 use log::{error, info, LevelFilter};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
-use serde_pickle::error;
 use std::cmp::max;
 use std::io;
 use std::num::NonZeroU32;
