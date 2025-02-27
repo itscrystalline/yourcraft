@@ -14,6 +14,7 @@ in {
     pkgs.libz 
     pkgs.SDL2
     pkgs.evcxr
+    pkgs.cargo-binutils
   ] ++ (with pkgs.python312Packages; [
     (pygame.overrideAttrs (oldAttrs: newAttrs: {
         env.PYGAME_DETECT_AVX2 = 1;
@@ -26,7 +27,7 @@ in {
   languages.rust = {
     enable = true;
     channel = "stable";
-    components = [ "rustc" "cargo" "clippy" "rustfmt" "rust-analyzer" "rust-src" ];
+    components = [ "rustc" "cargo" "clippy" "rustfmt" "rust-analyzer" "rust-src" "llvm-tools" ];
     targets = [ "x86_64-unknown-linux-gnu" "aarch64-unknown-linux-gnu" "i686-unknown-linux-gnu" "x86_64-unknown-linux-musl" "aarch64-unknown-linux-musl" ];
   };
   languages.python = {
