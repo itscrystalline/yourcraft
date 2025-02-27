@@ -274,3 +274,8 @@ fabric.properties
 
 flamegraph.svg
 perf*
+
+server.bat
+client.bat
+
+.idea
