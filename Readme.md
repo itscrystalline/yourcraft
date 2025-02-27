@@ -133,9 +133,9 @@ kicked from the server.
 🟨⬛️ [S2C] ServerSendMessage (player_id: int, player_name: str, msg: str)
 ✅✅ [C2S] ClientSendMessage (msg: str)
 ✅✅ [C2S] ClientBreakBlock (x: int, y: int)
-⬛️⬛️ [C2S] ClientTryAttack (player_id: int)
-⬛️⬛️ [C2S] ClientChangeSlot (slot: int)
-⬛️⬛️ [S2C] ServerUpdateHealth (health: int)
+🟨⬛️ [C2S] ClientTryAttack (player_id: int)
+🟨⬛️ [C2S] ClientChangeSlot (slot: int)
+🟨⬛️ [S2C] ServerUpdateHealth (health: int)
 🟨⬛️ [S2C] ServerUpdateInventory (inv: list of ItemStack)
 ```
 

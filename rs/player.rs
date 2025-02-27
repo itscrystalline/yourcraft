@@ -35,7 +35,7 @@ impl Acceleration {
 pub struct Player {
     pub x: f32,
     pub y: f32,
-    pub health: u8,
+    pub health: f32,
     pub hitbox_width: u32,
     pub hitbox_height: u32,
     pub velocity: Velocity,
@@ -102,7 +102,7 @@ impl Player {
         Ok(Player {
             x: highest_x as f32,
             y: (highest_y + 1) as f32,
-            health: 5,
+            health: 5.0,
             hitbox_width: constants::HITBOX_WIDTH,
             hitbox_height: constants::HITBOX_HEIGHT,
             velocity: Velocity::default(),
@@ -216,6 +216,21 @@ impl Player {
         self.inventory[self.selected_slot as usize]
     }
 
+    pub fn get_current_damage(&self) -> f32 {
+        match self.get_current_itemstack() {
+            Some(ItemStack {
+                item: Item::WoodSword,
+                ..
+            }) => 0.5,
+            Some(ItemStack {
+                item: Item::WoodAxe | Item::WoodPickaxe,
+                ..
+            }) => 0.35,
+            Some(_) => 0.2,
+            None => 0.1,
+        }
+    }
+
     pub fn consume_current(&mut self) {
         if let Some(current) = self.inventory[self.selected_slot as usize] {
             self.inventory[self.selected_slot as usize] =
@@ -274,7 +289,7 @@ impl Player {
         considered_solid && y.round() == y
     }
 
-    pub fn do_fall(mut self, surrounding: Surrounding) -> Self {
+    fn do_fall(mut self, surrounding: Surrounding) -> Self {
         match !Self::is_grounded(self.x, self.y, surrounding) {
             true => {
                 self.velocity.y = self.velocity.y.max(-constants::TERMINAL_VELOCITY);
@@ -288,6 +303,21 @@ impl Player {
         self
     }
 
+    fn do_air_resistance(mut self) -> Self {
+        match self.acceleration.x.partial_cmp(&0.0) {
+            Some(Ordering::Less) => {
+                self.acceleration.x =
+                    f32::min(self.acceleration.x + constants::AIR_RESISTANCE, 0.0);
+            }
+            Some(Ordering::Greater) => {
+                self.acceleration.x =
+                    f32::max(self.acceleration.x - constants::AIR_RESISTANCE, 0.0);
+            }
+            _ => self.acceleration.x = 0.0,
+        };
+        self
+    }
+
     pub fn do_move(mut self, surrounding: Surrounding) -> (Self, bool) {
         // jump
         if self.do_jump && Self::is_grounded(self.x, self.y, surrounding) {
@@ -298,6 +328,7 @@ impl Player {
         self.do_jump = false;
 
         self = self.do_fall(surrounding);
+        self = self.do_air_resistance();
         // void check
         if self.y <= constants::RESPAWN_THRESHOLD {
             self.y = -constants::RESPAWN_THRESHOLD;
@@ -373,7 +404,7 @@ define_items! {
     Leaves = (3, Some(Block::Leaves)),
     Bucket = (4, None),
     WaterBucket = (5, Some(Block::Water)),
-    Pickaxe = (6, None),
-    Axe = (7, None),
-    Sword = (8, None)
+    WoodPickaxe = (6, None),
+    WoodAxe = (7, None),
+    WoodSword = (8, None)
 }
