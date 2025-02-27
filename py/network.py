@@ -22,6 +22,7 @@ CLIENT_MESSAGE = 19
 SERVER_MESSAGE = "ServerSendMessage"
 
 
+
 class Packet:
     def serialize(self):
         contents = self.__dict__
@@ -94,6 +95,18 @@ class ClientUnloadChunk(Packet):
 class ClientSendMessage(Packet):
     def __init__(self, msg):
         self.msg = msg
+
+
+class ClientTryAttack(Packet):
+    def __init__(self, player_id):
+        self.player_id = player_id
+
+
+class ClientChangeSlot(Packet):
+    def __init__(self, slot):
+        self.slot = slot
+
+
 
 
 def test():
