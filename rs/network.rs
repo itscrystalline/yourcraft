@@ -143,6 +143,10 @@ pub enum PacketTypes {
         x: u32,
         y: u32,
     },
+    ServerBatchUpdateBlock {
+        block: u8,
+        batch: Vec<(u32, u32)>,
+    },
     ClientPlayerXVelocity {
         vel_x: f32,
     },
@@ -517,19 +521,24 @@ pub async fn process_client_packet(
                             world.get_block(x, y),
                             "cannot get block: {}"
                         );
-                        let item: Option<Item> = block.into();
-                        if let Some(item) = item {
-                            let stack: ItemStack = item.into();
-                            let _ = world.players[idx].server_player.insert(stack);
-                            if let Err(e) = world
-                                .set_block_and_notify(to_network.clone(), x, y, Block::Air)
-                                .await
-                            {
-                                match e {
-                                    WorldError::NetworkError(e) => {
-                                        c_error!(to_console, "error while notifying clients: {e}")
+                        if is_solid(block) {
+                            let item: Option<Item> = block.into();
+                            if let Some(item) = item {
+                                let stack: ItemStack = item.into();
+                                let _ = world.players[idx].server_player.insert(stack);
+                                if let Err(e) = world
+                                    .set_block_and_notify(to_network.clone(), x, y, Block::Air)
+                                    .await
+                                {
+                                    match e {
+                                        WorldError::NetworkError(e) => {
+                                            c_error!(
+                                                to_console,
+                                                "error while notifying clients: {e}"
+                                            )
+                                        }
+                                        _ => c_error!(to_console, "error while placing block: {e}"),
                                     }
-                                    _ => c_error!(to_console, "error while placing block: {e}"),
                                 }
                             }
                         }

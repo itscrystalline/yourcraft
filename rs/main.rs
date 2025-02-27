@@ -121,8 +121,8 @@ async fn main() -> io::Result<()> {
     let mut physics_tick = time::interval(Duration::from_millis(
         1000 / constants::PHYS_TICKS_PER_SECOND,
     ));
-    let mut physics_update_tick = time::interval(Duration::from_millis(
-        1000 / constants::PHYS_UPDATES_PER_SECOND,
+    let mut packet_update_tick = time::interval(Duration::from_millis(
+        1000 / constants::PACKET_UPDATES_PER_SECOND,
     ));
     let mut heartbeat_tick =
         time::interval(Duration::from_secs(constants::SECONDS_BETWEEN_HEARTBEATS));
@@ -192,8 +192,9 @@ async fn main() -> io::Result<()> {
             _ = physics_tick.tick() => {
                 phys_last_tick_time = world.physics_tick(to_network.clone()).await?;
             }
-            _ = physics_update_tick.tick() => {
+            _ = packet_update_tick.tick() => {
                 world.flush_physics_queue(to_network.clone()).await?;
+                world.flush_block_queue(to_network.clone()).await?;
             }
             _ = world_tick.tick() => {
                 last_tick_time = world.world_tick(to_console.clone(), to_network.clone()).await?;

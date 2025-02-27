@@ -1,7 +1,7 @@
 use crate::console::ToConsole;
 use crate::network::{ClientConnection, PacketTypes, ToNetwork};
 use crate::player::{Item, Player, Surrounding};
-use crate::{c_debug, c_error, c_info, WorldType};
+use crate::{c_debug, c_error, c_info, constants, WorldType};
 use fast_poisson::Poisson;
 use itertools::Itertools;
 use noise::{NoiseFn, OpenSimplex, Perlin};
@@ -49,6 +49,12 @@ pub struct PositionUpdate {
 }
 
 #[derive(Debug)]
+pub struct BatchBlockUpdate {
+    pub positions: Vec<(u32, u32)>,
+    pub recievers: Vec<SocketAddr>,
+}
+
+#[derive(Debug)]
 pub struct World {
     pub width: u32,
     pub height: u32,
@@ -59,6 +65,7 @@ pub struct World {
     pub players: Vec<ClientConnection>,
     player_loaded: Vec<Vec<u32>>,
     pub physics_update_queue: HashMap<u32, PositionUpdate>,
+    block_update_queue: HashMap<Block, HashMap<(u32, u32), BatchBlockUpdate>>,
     to_update: HashSet<(u32, u32, Block)>,
     pub spawn_point: u32,
     pub spawn_range: NonZeroU32,
@@ -269,6 +276,7 @@ impl World {
                 player_loaded,
                 to_update: HashSet::new(),
                 physics_update_queue: HashMap::new(),
+                block_update_queue: HashMap::new(),
                 spawn_point,
                 spawn_range,
             })
@@ -591,21 +599,35 @@ impl World {
     pub fn set_block(&mut self, pos_x: u32, pos_y: u32, block: Block) -> Result<(), WorldError> {
         self.raw_set_block(pos_x, pos_y, block)?;
         // update block
-        if block == Block::Water {
-            let SurroundingBlocks {
-                bottom,
-                left,
-                right,
-                ..
-            } = self.get_neighbours(pos_x, pos_y);
-            [bottom, left, right]
-                .into_iter()
-                .flatten()
-                .for_each(|(x, y, bl)| {
-                    if !is_solid(bl) && bl != Block::Water {
-                        self.to_update.insert((x, y, Block::Water));
-                    }
-                });
+        let SurroundingBlocks {
+            top,
+            bottom,
+            left,
+            right,
+            ..
+        } = self.get_neighbours(pos_x, pos_y);
+
+        match block {
+            Block::Water => {
+                [bottom, left, right]
+                    .into_iter()
+                    .flatten()
+                    .for_each(|(x, y, bl)| {
+                        if !is_solid(bl) && bl != Block::Water {
+                            self.to_update.insert((x, y, Block::Water));
+                        }
+                    });
+            }
+            Block::Air => {
+                let has_surrounding_water = [top, bottom, left, right]
+                    .into_iter()
+                    .flatten()
+                    .any(|(_, _, bl)| bl == Block::Water);
+                if has_surrounding_water {
+                    self.to_update.insert((pos_x, pos_y, Block::Water));
+                }
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -829,9 +851,47 @@ impl World {
             })
             .collect();
         self.to_update.retain(|pos| pos.2 != Block::Water);
-        for (x, y) in to_update {
-            self.set_block_and_notify(to_network.clone(), x, y, Block::Water)
-                .await?;
+        if to_update.len() <= constants::PACKET_BATCH_THRESHOLD {
+            for (x, y) in to_update {
+                self.set_block_and_notify(to_network.clone(), x, y, Block::Water)
+                    .await?;
+            }
+        } else {
+            for pos in to_update {
+                let chunk_pos = self.get_chunk_block_is_in(pos.0, pos.1)?;
+                let recievers = self
+                    .get_list_of_players_loading_chunk(chunk_pos.0, chunk_pos.1)?
+                    .into_iter()
+                    .map(|conn| conn.addr)
+                    .collect();
+                match self.block_update_queue.get_mut(&Block::Water) {
+                    Some(old_queue) => match old_queue.get_mut(&chunk_pos) {
+                        Some(old_chunk_queue) => {
+                            old_chunk_queue.positions.push(pos);
+                        }
+                        None => {
+                            old_queue.insert(
+                                chunk_pos,
+                                BatchBlockUpdate {
+                                    positions: vec![pos],
+                                    recievers,
+                                },
+                            );
+                        }
+                    },
+                    None => {
+                        let mut map: HashMap<(u32, u32), BatchBlockUpdate> = HashMap::new();
+                        map.insert(
+                            chunk_pos,
+                            BatchBlockUpdate {
+                                positions: vec![pos],
+                                recievers,
+                            },
+                        );
+                        self.block_update_queue.insert(Block::Water, map);
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -1021,7 +1081,7 @@ impl World {
                     recievers,
                 },
             )| {
-                recievers.iter().for_each(|&reciever| {
+                recievers.into_iter().for_each(|reciever| {
                     encode_and_send!(
                         to_network,
                         PacketTypes::ServerPlayerUpdatePos {
@@ -1034,6 +1094,30 @@ impl World {
                 });
             },
         );
+        Ok(())
+    }
+
+    pub async fn flush_block_queue(&mut self, to_network: ToNetwork) -> io::Result<()> {
+        self.block_update_queue.drain().for_each(|(block, chunks)| {
+            chunks.into_values().for_each(
+                |BatchBlockUpdate {
+                     positions,
+                     recievers,
+                 }| {
+                    recievers.into_iter().for_each(|addr| {
+                        encode_and_send!(
+                            to_network,
+                            PacketTypes::ServerBatchUpdateBlock {
+                                block: block.into(),
+                                batch: positions.clone()
+                            },
+                            addr
+                        );
+                    });
+                },
+            );
+        });
+
         Ok(())
     }
 
