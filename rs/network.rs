@@ -732,7 +732,7 @@ pub async fn process_client_packet(
         }
         PacketTypes::ClientChangeSlot { slot } => {
             assert_player_exists!(to_console, world, addr, par_iter, position_any, idx, {
-                world.players[idx].server_player.selected_slot = slot.clone();
+                world.players[idx].server_player.selected_slot = slot;
             })
         }
 
