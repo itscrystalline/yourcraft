@@ -891,6 +891,7 @@ impl World {
                         self.block_update_queue.insert(Block::Water, map);
                     }
                 }
+                self.set_block(pos.0, pos.1, Block::Water)?;
             }
         }
         Ok(())
