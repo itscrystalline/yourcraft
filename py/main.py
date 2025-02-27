@@ -359,6 +359,11 @@ def main():
         pygame.draw.rect(screen, WHITE, (
             screen_width / 2 - pixel_scaling / 2, screen_height / 2 - pixel_scaling, pixel_scaling, 2 * pixel_scaling))
 
+        name = font.render("test", 1, WHITE)
+        name_rect = name.get_rect()
+
+        screen.blit(name, (screen_width/2 - name_rect.center[0], screen_height/2 - 2 * pixel_scaling - name_rect.center[1]))
+
         # Debug FPS and Position
         screen.blit(font.render(f"{clock.get_fps():.2f} FPS", 1, WHITE), (0, 0))
         screen.blit(font.render(f"{position2D}", 1, WHITE), (400, 0))
