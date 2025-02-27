@@ -1,6 +1,7 @@
 import math
 import sys
 import pygame
+import pygame.gfxdraw
 import classic_component
 import classic_entity
 import network
@@ -27,6 +28,7 @@ clock = pygame.time.Clock()
 
 # Font
 font = pygame.font.SysFont("Arial", 20)
+message_font = pygame.font.SysFont("Arial", 60)
 
 # Set up colors
 WHITE = (255, 255, 255)
@@ -35,7 +37,7 @@ BLUE = (0, 0, 255)
 # Entities
 currentPlayer = classic_entity.Player()
 # K_RETURN is [Enter]
-currentPlayer.keys = [pygame.K_a, pygame.K_d, pygame.K_e, pygame.K_q, pygame.K_SPACE, pygame.K_RETURN]
+currentPlayer.keys = [pygame.K_a, pygame.K_d, pygame.K_e, pygame.K_q, pygame.K_SPACE, pygame.K_RETURN, pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5, pygame.K_6, pygame.K_7, pygame.K_8, pygame.K_9]
 position2D = currentPlayer.getComponent("transform2D").getVariable("position")
 speed = 10 * pixel_scaling
 
@@ -44,6 +46,7 @@ otherPlayers = {}
 
 # Messages' "queue"
 messages = []
+client_message = ""
 MAX_MESSAGES = 50
 is_chatting = False
 chat_key_pressing = False
@@ -60,7 +63,8 @@ MousePos = pygame.mouse.get_pos()
 # Block Types
 def load(name):
     file = f"{os.path.dirname(os.path.realpath(__file__))}/resources/{name}"
-    return pygame.image.load(file) 
+    return pygame.image.load(file)
+
 
 def load_resource(name):
     pic = load(name)
@@ -216,6 +220,7 @@ def sync_data():
 
                 protocolValue.clear()
 
+
 # Get block
 def get_block(x, y) -> int:
     return World[(int(x // (16 * pixel_scaling)), int(y // (16 * pixel_scaling)))] \
@@ -230,6 +235,7 @@ def place_in_range(x, y, d) -> bool:
     return False
 
 
+# Define break range
 def break_in_range(x, y, d) -> bool:
     if (d[0] ** 2 + d[1] ** 2) <= 64 or (d[0] ** 2 + (d[1] - 1) ** 2) <= 64:
         cliNet.send(network.ClientBreakBlock(x, y))
@@ -239,7 +245,7 @@ def break_in_range(x, y, d) -> bool:
 
 # Game loop
 def main():
-    global running, screen_size, screen_width, screen_height, WasJump, prev_direction, MousePos, is_chatting, chat_key_pressing
+    global running, screen_size, screen_width, screen_height, WasJump, prev_direction, MousePos, is_chatting, chat_key_pressing, client_message
     while running:
         dt = clock.tick(50) / 1000  # Calculate time per frame
         MousePos = pygame.mouse.get_pos()
@@ -252,6 +258,16 @@ def main():
                 screen_size = screen.get_size()
                 screen_width = screen_size[0]
                 screen_height = screen_size[1]
+            elif event.type == pygame.KEYDOWN:
+                if is_chatting:
+                    if event.key == pygame.K_BACKSPACE and client_message.__len__() > 0:
+                        client_message = client_message[:-1]
+                    elif event.key == pygame.K_RETURN:
+                        continue
+                    else:
+                        client_message += event.unicode
+                elif event.key in currentPlayer.keys[6:15]:
+                    cliNet.send(network.ClientChangeSlot(event.key-49))
 
         # Update from server :)
         sync_data()
@@ -318,13 +334,14 @@ def main():
         if keys[currentPlayer.keys[5]] and is_chatting and not chat_key_pressing:
             chat_key_pressing = True
             is_chatting = False
-            cliNet.send(network.ClientSendMessage("FUCK YOU"))
+            if client_message != "":
+                cliNet.send(network.ClientSendMessage(client_message))
+                client_message = ""
         elif keys[currentPlayer.keys[5]] and not is_chatting and not chat_key_pressing:
             is_chatting = True
             chat_key_pressing = True
         elif not keys[currentPlayer.keys[5]] and chat_key_pressing:
             chat_key_pressing = False
-
 
         # # Debug chunk
         # if keys[pygame.K_EQUALS]:
@@ -359,10 +376,17 @@ def main():
         pygame.draw.rect(screen, WHITE, (
             screen_width / 2 - pixel_scaling / 2, screen_height / 2 - pixel_scaling, pixel_scaling, 2 * pixel_scaling))
 
+        # Draw player's name
         name = font.render("test", 1, WHITE)
         name_rect = name.get_rect()
 
-        screen.blit(name, (screen_width/2 - name_rect.center[0], screen_height/2 - 2 * pixel_scaling - name_rect.center[1]))
+        screen.blit(name, (
+            screen_width / 2 - name_rect.center[0], screen_height / 2 - 2 * pixel_scaling - name_rect.center[1]))
+
+        if is_chatting:
+            # Draw client chat
+            pygame.gfxdraw.box(screen, (0, screen_height * 4 / 5, screen_width, screen_height / 10), (0, 0, 0, 64))
+            screen.blit(message_font.render(client_message, 1, WHITE), (0, screen_height * 4 / 5))
 
         # Debug FPS and Position
         screen.blit(font.render(f"{clock.get_fps():.2f} FPS", 1, WHITE), (0, 0))
