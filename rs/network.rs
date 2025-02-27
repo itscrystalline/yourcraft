@@ -170,9 +170,8 @@ pub enum PacketTypes {
         x: u32,
         y: u32,
     },
-    ClientAttack {
-        x: f32,
-        y: f32,
+    ClientTryAttack {
+        player_id: u32,
     },
     ClientChangeSlot {
         slot: u8,

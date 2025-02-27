@@ -81,8 +81,14 @@ pub struct Chunk {
 
 pub type BlockPos = (u32, u32, Block);
 
+pub struct BlockProperties {
+    solid: bool,
+    item: Option<Item>,
+    hardness: u8,
+}
+
 macro_rules! define_blocks {
-    ($($name:ident = ($id:expr, $solid:expr, $item:expr)),* $(,)?) => {
+    ($($name: ident = $id: expr => { $($prop_name:ident : $prop_value:expr),* $(,)? }),* $(,)?) => {
         #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash, EnumString)]
         pub enum Block {
             $($name = $id),*
@@ -101,17 +107,21 @@ macro_rules! define_blocks {
             fn from(block: Block) -> u8 { block as u8 }
         }
 
-        pub fn is_solid(block: Block) -> bool {
-            match block {
-                $(Block::$name => $solid),*
+        impl Block {
+            fn properties(self) -> BlockProperties {
+                match self {
+                    $(Block::$name => BlockProperties { $($prop_name: $prop_value),* }),*
+                }
             }
+        }
+
+        pub fn is_solid(block: Block) -> bool {
+            block.properties().solid
         }
 
         impl From<Block> for Option<Item> {
             fn from(block: Block) -> Self {
-                match block {
-                    $(Block::$name => $item),*
-                }
+                block.properties().item
             }
         }
     };
@@ -1068,10 +1078,10 @@ impl Chunk {
 }
 
 define_blocks! {
-    Air = (0, false, None),
-    Grass = (1, true, Some(Item::Grass)),
-    Stone = (2, true, Some(Item::Stone)),
-    Wood = (3, true, Some(Item::Wood)),
-    Leaves = (4, true, Some(Item::Leaves)),
-    Water = (5, false, Some(Item::WaterBucket)),
+    Air = 0 => { solid: false, item: None, hardness: 0 },
+    Grass = 1 => { solid: true, item: Some(Item::Grass), hardness: 0 },
+    Stone = 2 => { solid: true, item: Some(Item::Stone), hardness: 1 },
+    Wood = 3 => { solid: true, item: Some(Item::Wood), hardness: 0 },
+    Leaves = 4 => { solid: true, item: Some(Item::Leaves), hardness: 0},
+    Water = 5 => { solid: false, item: Some(Item::WaterBucket), hardness: 0},
 }
