@@ -1,7 +1,8 @@
-use std::{cmp::Ordering, num::NonZeroU8};
+use std::{cmp::Ordering, net::SocketAddr, num::NonZeroU8};
 
 use crate::{
     constants,
+    network::{PacketTypes, ToNetwork},
     world::{is_solid, Block, BlockPos, World, WorldError},
 };
 #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
@@ -269,6 +270,18 @@ impl Player {
             }
         }
         Err(count_left)
+    }
+
+    pub fn notify_inventory_changed(&self, to_network: ToNetwork, addr: SocketAddr) {
+        encode_and_send!(
+            to_network,
+            PacketTypes::ServerUpdateInventory {
+                inv: self
+                    .inventory
+                    .map(|stack_maybe| stack_maybe.map(|s| s.into())),
+            },
+            addr
+        );
     }
 
     fn is_grounded(x: f32, y: f32, surrounding: Surrounding) -> bool {

@@ -525,6 +525,10 @@ pub async fn process_client_packet(
                             if let Some(item) = item {
                                 let stack: ItemStack = item.into();
                                 let _ = world.players[idx].server_player.insert(stack);
+                                world.players[idx].server_player.notify_inventory_changed(
+                                    to_network.clone(),
+                                    world.players[idx].addr,
+                                );
                                 if let Err(e) = world
                                     .set_block_and_notify(to_network.clone(), x, y, Block::Air)
                                     .await
@@ -560,17 +564,12 @@ pub async fn process_client_packet(
                                     match place_result {
                                         Ok(_) => {
                                             world.players[idx].server_player.consume_current();
-                                            encode_and_send!(
-                                                to_network,
-                                                PacketTypes::ServerUpdateInventory {
-                                                    inv: world.players[idx]
-                                                        .server_player
-                                                        .inventory
-                                                        .map(|stack_maybe| stack_maybe
-                                                            .map(|s| s.into())),
-                                                },
-                                                world.players[idx].addr
-                                            );
+                                            world.players[idx]
+                                                .server_player
+                                                .notify_inventory_changed(
+                                                    to_network,
+                                                    world.players[idx].addr,
+                                                );
                                         }
                                         Err(e) => match e {
                                             WorldError::NetworkError(e) => {
