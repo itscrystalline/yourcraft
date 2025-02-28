@@ -309,7 +309,7 @@ impl Player {
             true => {
                 self.velocity.y = self.velocity.y.max(-constants::TERMINAL_VELOCITY);
                 self.y += self.velocity.y;
-                self.acceleration.y -= constants::G - constants::AIR_RESISTANCE;
+                self.acceleration.y -= constants::G - Self::get_resistance(surrounding);
             }
             false => {
                 (self.velocity.y, self.acceleration.y) = (0.0, 0.0);
@@ -318,15 +318,31 @@ impl Player {
         self
     }
 
-    fn do_air_resistance(mut self) -> Self {
+    fn get_resistance(surrounding: Surrounding) -> f32 {
+        let Surrounding {
+            upper_body,
+            lower_body,
+            ..
+        } = surrounding;
+        let in_water = [upper_body, lower_body]
+            .into_iter()
+            .flatten()
+            .any(|(_, _, bl)| bl == Block::Water);
+        match in_water {
+            true => constants::WATER_RESISTANCE,
+            false => constants::AIR_RESISTANCE,
+        }
+    }
+
+    fn do_air_resistance(mut self, surrounding: Surrounding) -> Self {
         match self.acceleration.x.partial_cmp(&0.0) {
             Some(Ordering::Less) => {
                 self.acceleration.x =
-                    f32::min(self.acceleration.x + constants::AIR_RESISTANCE, 0.0);
+                    f32::min(self.acceleration.x + Self::get_resistance(surrounding), 0.0);
             }
             Some(Ordering::Greater) => {
                 self.acceleration.x =
-                    f32::max(self.acceleration.x - constants::AIR_RESISTANCE, 0.0);
+                    f32::max(self.acceleration.x - Self::get_resistance(surrounding), 0.0);
             }
             _ => self.acceleration.x = 0.0,
         };
@@ -336,14 +352,14 @@ impl Player {
     pub fn do_move(mut self, surrounding: Surrounding) -> (Self, bool) {
         // jump
         if self.do_jump && Self::is_grounded(self.x, self.y, surrounding) {
-            self.acceleration.y = constants::INITIAL_JUMP_ACCEL;
+            self.acceleration.y = constants::INITIAL_JUMP_ACCEL - Self::get_resistance(surrounding);
             self.velocity.y = constants::INITIAL_JUMP_SPEED;
             self.y += self.velocity.y;
         }
         self.do_jump = false;
 
         self = self.do_fall(surrounding);
-        self = self.do_air_resistance();
+        self = self.do_air_resistance(surrounding);
         // void check
         if self.y <= constants::RESPAWN_THRESHOLD {
             self.y = -constants::RESPAWN_THRESHOLD;
