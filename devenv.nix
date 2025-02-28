@@ -28,7 +28,7 @@ in {
     enable = true;
     channel = "stable";
     components = [ "rustc" "cargo" "clippy" "rustfmt" "rust-analyzer" "rust-src" "llvm-tools" ];
-    targets = [ "x86_64-unknown-linux-gnu" "aarch64-unknown-linux-gnu" "i686-unknown-linux-gnu" "x86_64-unknown-linux-musl" "aarch64-unknown-linux-musl" ];
+    targets = [ "x86_64-unknown-linux-gnu" "aarch64-unknown-linux-gnu" "i686-unknown-linux-gnu" "x86_64-unknown-linux-musl" "aarch64-unknown-linux-musl" "i686-unknown-linux-musl" ];
   };
   languages.python = {
     enable = true;
