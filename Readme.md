@@ -123,7 +123,7 @@ kicked from the server.
 ✅✅ [C2S] ClientGoodbye ()                                                                                                 
 ✅✅ [C2S] ClientPlaceBlock (x: int, y: int)
 ✅✅ [S2C] ServerUpdateBlock (block: Block Enum as int, x: int, y: int)                                                     
-🟨🟨 [S2C] ServerBatchUpdateBlock (block: Block Enum as int, batch: list of tuple(x: int, y: int))                                                     
+✅✅ [S2C] ServerBatchUpdateBlock (block: Block Enum as int, batch: list of tuple(x: int, y: int))                                                     
 ✅✅ [C2S] ClientPlayerXVelocity (vel_x: float)                                                                                 
 ✅✅ [C2S] ClientPlayerJump ()
 ✅✅ [C2S] ClientPlayerRespawn ()
