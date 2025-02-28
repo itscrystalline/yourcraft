@@ -1,5 +1,5 @@
 use crate::console::ToConsole;
-use crate::player::{Item, ItemStack, Player, Surrounding};
+use crate::player::{Item, ItemStack, Player};
 use crate::world::{is_solid, Block, Chunk, World, WorldError};
 use crate::{c_debug, c_error, c_info, c_warn, constants};
 use rand::prelude::*;
@@ -217,7 +217,11 @@ pub fn init(
         let (to_main, mut from_main) = (to_main, from_main);
         let mut buf = [0u8; 1024];
         let mut network_error_strikes = 0u8;
-        c_info!(to_console, "Listening on {}", socket.local_addr().unwrap());
+        c_info!(
+            to_console,
+            "Listening on {}",
+            socket.local_addr().expect("cannot get socket address")
+        );
         loop {
             tokio::select! {
                 maybe_packet_incoming = socket.recv_from(&mut buf) => {
@@ -381,10 +385,10 @@ pub async fn process_client_packet(
             // notify other players and the ones loading the chunk
             let spawn_chunk_pos = world
                 .get_chunk_block_is_in(spawn_block_pos.0, spawn_block_pos.1)
-                .unwrap();
+                .unwrap_or_else(|_| unreachable!());
             let players_loading_chunk = world
                 .get_list_of_players_loading_chunk(spawn_chunk_pos.0, spawn_chunk_pos.1)
-                .unwrap();
+                .unwrap_or_else(|_| unreachable!());
 
             for player in world.players.iter() {
                 encode_and_send!(

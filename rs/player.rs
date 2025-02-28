@@ -251,7 +251,7 @@ impl Player {
                 None => {
                     *stack = Some(ItemStack {
                         item: itemstack.item,
-                        count: NonZeroU8::new(count_left).unwrap(),
+                        count: NonZeroU8::new(count_left).unwrap_or_else(|| unreachable!()),
                     });
                     count_left = 0;
                 }
@@ -264,7 +264,8 @@ impl Player {
                             }
                             None => {
                                 count_left = stack.count.get().wrapping_add(count_left + 1);
-                                stack.count = NonZeroU8::new(u8::MAX).unwrap();
+                                stack.count =
+                                    NonZeroU8::new(u8::MAX).unwrap_or_else(|| unreachable!());
                             }
                         }
                     }
@@ -387,7 +388,7 @@ impl From<Item> for ItemStack {
     fn from(item: Item) -> Self {
         Self {
             item,
-            count: NonZeroU8::new(1).unwrap(),
+            count: NonZeroU8::new(1).unwrap_or_else(|| unreachable!()),
         }
     }
 }

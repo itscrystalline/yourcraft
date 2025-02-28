@@ -1,3 +1,4 @@
+#![deny(clippy::unwrap_used)]
 use crate::world::World;
 use clap::{Parser, Subcommand};
 use console::Stats;
@@ -144,7 +145,9 @@ async fn main() -> io::Result<()> {
         Ok(w) => w,
         Err(e) => {
             let _ = to_console.send(console::ToConsoleType::Quit);
-            console_thread.await.unwrap();
+            console_thread
+                .await
+                .expect("console thread failed to terminate");
             error!("Error creating world: {e}");
             exit(1);
         }
@@ -164,7 +167,9 @@ async fn main() -> io::Result<()> {
         Ok(s) => s,
         Err(e) => {
             let _ = to_console.send(console::ToConsoleType::Quit);
-            console_thread.await.unwrap();
+            console_thread
+                .await
+                .expect("console thread failed to terminate");
             error!("error binding port: {e}");
             exit(1);
         }
@@ -257,8 +262,12 @@ async fn main() -> io::Result<()> {
         .await?;
     let _ = to_console.send(console::ToConsoleType::Quit);
     let _ = to_network.send(network::NetworkThreadMessage::Shutdown);
-    console_thread.await.unwrap();
-    network_thread.await.unwrap();
+    console_thread
+        .await
+        .expect("console thread failed to terminate");
+    network_thread
+        .await
+        .expect("network thread failed to terminate");
 
     info!("Server shutdown complete after being up for {uptime:?}.");
     Ok(())

@@ -547,7 +547,7 @@ impl World {
             &self.player_loaded[(chunk_y * self.width_chunks + chunk_x) as usize];
         let players_loading = players_loading_ids
             .iter()
-            .map(|&id| self.players.iter().find(|&conn| conn.id == id).unwrap())
+            .flat_map(|&id| self.players.iter().find(|&conn| conn.id == id))
             .collect();
         Ok(players_loading)
     }
@@ -728,20 +728,6 @@ impl World {
                     kick_msg
                 );
 
-                let last_location = (
-                    connection.server_player.x.round() as u32,
-                    connection.server_player.y.round() as u32,
-                );
-                let last_location_chunk_pos = self
-                    .get_chunk_block_is_in(last_location.0, last_location.1)
-                    .unwrap();
-                let players_loading_chunk = self
-                    .get_list_of_players_loading_chunk(
-                        last_location_chunk_pos.0,
-                        last_location_chunk_pos.1,
-                    )
-                    .unwrap();
-
                 encode_and_send!(
                     to_network,
                     PacketTypes::ServerKick {
@@ -750,17 +736,29 @@ impl World {
                     connection.addr
                 );
 
-                for player in self.players.iter() {
-                    if players_loading_chunk.contains(&player) {
+                let last_location = (
+                    connection.server_player.x.round() as u32,
+                    connection.server_player.y.round() as u32,
+                );
+                if let Ok((chunk_x, chunk_y)) =
+                    self.get_chunk_block_is_in(last_location.0, last_location.1)
+                {
+                    let players_loading_chunk = self
+                        .get_list_of_players_loading_chunk(chunk_x, chunk_y)
+                        .unwrap_or_default();
+                    players_loading_chunk.into_iter().for_each(|conn| {
                         encode_and_send!(
                             to_network,
                             PacketTypes::ServerPlayerLeaveLoaded {
                                 player_name: connection.name.clone(),
-                                player_id: connection.id,
+                                player_id: connection.id
                             },
-                            player.addr
+                            conn.addr
                         );
-                    }
+                    });
+                }
+
+                for player in self.players.iter() {
                     encode_and_send!(
                         to_network,
                         PacketTypes::ServerPlayerLeave {
