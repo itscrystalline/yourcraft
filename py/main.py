@@ -76,6 +76,8 @@ BlockType = list(
     map(load_resource, ["grassblock.png", "stoneblock.png", "woodblock.png", "leaves.png", "waterblock.png"]))
 bg = load("background2.png").convert_alpha()
 
+Non_Solid = [0, 5]
+
 # Set connection
 cliNet = network.ServerConnection("127.0.0.1")
 cliNet.send(network.ClientHello("test"))
@@ -107,7 +109,7 @@ def NetworkThread():
     while True:
         time.sleep(0.016)  # Sleep for 16ms (for approx. 60FPS)
         receiving = cliNet.recv()
-        print(receiving)
+        # print(receiving)
 
         # Synchronize access to the shared resource
         with network_lock:
@@ -155,6 +157,8 @@ def NetworkThread():
                                               int(y // 16)))) is not None:
                         UpdateChunk[(15 - int(x % 16),
                                      15 - int(y % 16))] = receiving['data']['block']
+            elif receiving['t'] == network.UPDATE_INVENTORY:
+                print(receiving['data'])
 
 
 # Draw world
@@ -227,13 +231,20 @@ def sync_data():
 
 # Get block
 def get_block(x, y) -> int:
-    return World[(int(x // (16 * pixel_scaling)), int(y // (16 * pixel_scaling)))] \
-        [(15 - int(x % (16 * pixel_scaling) // pixel_scaling), 15 - int(y % (16 * pixel_scaling) // pixel_scaling))]
+    try:
+        if x < 0 or y < 0:
+            return -1
+        return World[(int(x // (16 * pixel_scaling)), int(y // (16 * pixel_scaling)))] \
+            [(15 - int(x % (16 * pixel_scaling) // pixel_scaling), 15 - int(y % (16 * pixel_scaling) // pixel_scaling))]
+    except:
+        return -1
 
 
 # Define placement range
 def place_in_range(x, y, d) -> bool:
     if (d[0] ** 2 + d[1] ** 2) <= 64 or (d[0] ** 2 + (d[1] - 1) ** 2) <= 64:
+        # if (UpdateChunk := World.get((int(x // 16), int(y // 16)))) is not None:
+            # UpdateChunk[(15 - int(x % 16), 15 - int(y % 16))] = -2
         cliNet.send(network.ClientPlaceBlock(x, y))
         return True
     return False
@@ -286,7 +297,7 @@ def main():
         need_update_pos = False
         speed_update = 0
         if not is_chatting:
-            if keys[currentPlayer.keys[0]]:  # Move left
+            if keys[currentPlayer.keys[0]] and (get_block(position2D.x-1, position2D.y) in Non_Solid) and (get_block(position2D.x-1, position2D.y+20) in Non_Solid):  # Move left
                 position2D.x -= speed * dt
                 WorldDelta.vx -= speed * dt
                 movement_update = True
@@ -294,7 +305,7 @@ def main():
                     need_update_pos = True
                     speed_update = -speed * dt
                     prev_direction = -1
-            elif keys[currentPlayer.keys[1]]:  # Move right
+            elif keys[currentPlayer.keys[1]] and (get_block(position2D.x+1, position2D.y) in Non_Solid) and (get_block(position2D.x+1, position2D.y+20) in Non_Solid):  # Move right
                 position2D.x += speed * dt
                 WorldDelta.vx += speed * dt
                 movement_update = True
@@ -312,7 +323,7 @@ def main():
             if keys[currentPlayer.keys[2]]:  # Place block
                 NormalX = int((position2D.x - screen_width / 2 + MousePos[0] + pixel_scaling / 2) // pixel_scaling)
                 NormalY = int((position2D.y + screen_height / 2 - MousePos[1] + pixel_scaling) // pixel_scaling)
-                print(NormalX, NormalY)
+                # print(NormalX, NormalY)
                 if NormalX >= 0 and NormalY >= 0:
                     dScreenMouse = ((MousePos[0] - screen_width / 2) / pixel_scaling,
                                     (MousePos[1] - screen_height / 2) / pixel_scaling)
@@ -321,7 +332,7 @@ def main():
             if keys[currentPlayer.keys[3]]:  # Remove block
                 NormalX = int((position2D.x - screen_width / 2 + MousePos[0] + pixel_scaling / 2) // pixel_scaling)
                 NormalY = int((position2D.y + screen_height / 2 - MousePos[1] + pixel_scaling) // pixel_scaling)
-                print(NormalX, NormalY)
+                # print(NormalX, NormalY)
                 if NormalX >= 0 and NormalY >= 0:
                     dScreenMouse = ((MousePos[0] - screen_width / 2) / pixel_scaling,
                                     (MousePos[1] - screen_height / 2) / pixel_scaling)
