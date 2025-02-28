@@ -39,7 +39,7 @@ currentPlayer = classic_entity.Player()
 # K_RETURN is [Enter]
 currentPlayer.keys = [pygame.K_a, pygame.K_d, pygame.K_e, pygame.K_q, pygame.K_SPACE, pygame.K_RETURN, pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5, pygame.K_6, pygame.K_7, pygame.K_8, pygame.K_9]
 position2D = currentPlayer.getComponent("transform2D").getVariable("position")
-speed = 10 * pixel_scaling
+speed = 5 * pixel_scaling
 
 # Other players
 otherPlayers = {}
