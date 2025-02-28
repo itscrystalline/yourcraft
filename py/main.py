@@ -146,11 +146,15 @@ def NetworkThread():
             elif receiving['t'] == network.UPDATE_BLOCK:
                 if (UpdateChunk := World.get((int(receiving['data']['x'] // 16),
                                               int(receiving['data']['y'] // 16)))) is not None:
-                    print((15 - int(receiving['data']['x'] % 16 // pixel_scaling),
-                           15 - int(receiving['data']['y'] % 16 // pixel_scaling)))
                     UpdateChunk[(15 - int(receiving['data']['x'] % 16),
                                  15 - int(receiving['data']['y'] % 16))] = \
                         receiving['data']['block']
+            elif receiving['t'] == network.BATCH_UPDATE_BLOCK:
+                for x, y in receiving['data']['batch']:
+                    if (UpdateChunk := World.get((int(x // 16),
+                                              int(y // 16)))) is not None:
+                        UpdateChunk[(15 - int(x % 16),
+                                     15 - int(y % 16))] = receiving['data']['block']
 
 
 # Draw world

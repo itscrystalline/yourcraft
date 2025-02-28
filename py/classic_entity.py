@@ -12,3 +12,4 @@ class Player(Entity):
         self.addComponent("transform2D",classic_component.Transform2D())
         self.addComponent("velocity",classic_component.Velocity2D())
         self.addComponent("acceleration",classic_component.Acceleration2D())
+        self.addComponent("inventory",classic_component.Inventory())
