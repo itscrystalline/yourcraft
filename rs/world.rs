@@ -619,7 +619,7 @@ impl World {
                     });
             }
             Block::Air => {
-                let has_surrounding_water = [top, bottom, left, right]
+                let has_surrounding_water = [top, left, right]
                     .into_iter()
                     .flatten()
                     .any(|(_, _, bl)| bl == Block::Water);
