@@ -153,6 +153,8 @@ impl Player {
         if self.y != snap_y && ((bottom && self.velocity.y < 0.0) || (top && self.velocity.y > 0.0))
         {
             self.y = snap_y;
+            self.velocity.y = self.velocity.y.min(0.0);
+            self.acceleration.y = self.acceleration.y.min(0.0);
             has_changed = true;
         }
 
@@ -307,7 +309,7 @@ impl Player {
             true => {
                 self.velocity.y = self.velocity.y.max(-constants::TERMINAL_VELOCITY);
                 self.y += self.velocity.y;
-                self.acceleration.y -= constants::G;
+                self.acceleration.y -= constants::G - constants::AIR_RESISTANCE;
             }
             false => {
                 (self.velocity.y, self.acceleration.y) = (0.0, 0.0);
