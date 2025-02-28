@@ -596,6 +596,19 @@ impl World {
         }
     }
 
+    pub fn check_block_placment(&self, pos_x: u32, pos_y: u32) -> bool {
+        let SurroundingBlocks {
+            top,
+            bottom,
+            left,
+            right,
+        } = self.get_neighbours(pos_x, pos_y);
+        [top, bottom, left, right]
+            .into_iter()
+            .flatten()
+            .any(|(_, _, bl)| is_solid(bl))
+    }
+
     pub fn set_block(&mut self, pos_x: u32, pos_y: u32, block: Block) -> Result<(), WorldError> {
         self.raw_set_block(pos_x, pos_y, block)?;
         // update block

@@ -1,5 +1,5 @@
 use crate::console::ToConsole;
-use crate::player::{Item, ItemStack, Player};
+use crate::player::{Item, ItemStack, Player, Surrounding};
 use crate::world::{is_solid, Block, Chunk, World, WorldError};
 use crate::{c_debug, c_error, c_info, c_warn, constants};
 use rand::prelude::*;
@@ -552,7 +552,7 @@ pub async fn process_client_packet(
                             world.get_block(x, y),
                             "cannot get block: {}"
                         );
-                        if !is_solid(block_there) {
+                        if !is_solid(block_there) && world.check_block_placment(x, y) {
                             if let Some(item) =
                                 world.players[idx].server_player.get_current_itemstack()
                             {
