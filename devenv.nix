@@ -19,6 +19,8 @@ in {
     (pygame.overrideAttrs (oldAttrs: newAttrs: {
         env.PYGAME_DETECT_AVX2 = 1;
     }))
+    pygame-gui
+    nuitka
   ]) ++ pkgs.lib.optional (pkgs.system == "x86_64-linux") pkgs.gcc_multi;
 
   env.CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = "${cc_aarch64}/bin/${cc_aarch64.targetPrefix}cc";
@@ -37,4 +39,5 @@ in {
   
   devcontainer.enable = true;
   scripts.repl.exec = "evcxr";
+  scripts.client-build.exec = "PYTHONPATH=$PYTHONPATH:$(pwd)/py/entities python -m nuitka --onefile --follow-imports --include-plugin-directory=py/entities -o yourcraft-client --output-dir=build py/main.py";
 }
