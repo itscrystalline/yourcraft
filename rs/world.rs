@@ -354,6 +354,13 @@ impl World {
                 simplex.get([x * 0.001 * 32.0, y * 0.001 * 32.0]).abs()
             }
         };
+        let ore_generator = {
+            let seed = seed_generator.next_u32();
+            move |x, y| {
+                let simplex = OpenSimplex::new(seed);
+                simplex.get([x * 0.008 * 64.0, y * 0.008 * 64.0]).abs()
+            }
+        };
         let mut trees = Poisson::<1>::new()
             .with_seed(seed_generator.next_u64())
             .with_dimensions([world.width as f64], terrain_settings.tree_spawn_radius)
@@ -410,6 +417,15 @@ impl World {
                         let _ = world.generate_tree_at(x, top_y + 1);
                     }
                     next_tree = trees.next();
+                }
+            }
+
+            for y in 0..=u32::max(height, terrain_settings.water_height) {
+                let noise_here = ore_generator(x as f64, y as f64);
+                if world.get_block(x, y)? == Block::Stone{
+                    if noise_here < cave_gen_size {
+                        world.set_block(x, y, Block::Leaves)?;
+                    }
                 }
             }
         }
@@ -1180,4 +1196,5 @@ define_blocks! {
     Wood = 3 => { solid: true, item: Some(Item::Wood), hardness: 0 },
     Leaves = 4 => { solid: true, item: Some(Item::Leaves), hardness: 0},
     Water = 5 => { solid: false, item: Some(Item::WaterBucket), hardness: 0},
+    Ores = 6 => { solid: false, item: Some(Item::Ores), hardness: 1},
 }
