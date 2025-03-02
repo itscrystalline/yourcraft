@@ -77,6 +77,7 @@ position2D.x = INIT_DATA['spawn_x'] * pixel_scaling
 position2D.y = INIT_DATA['spawn_y'] * pixel_scaling
 WorldPosition.x = -INIT_DATA['spawn_x'] * pixel_scaling
 WorldPosition.y = -INIT_DATA['spawn_y'] * pixel_scaling
+Worldwidth = INIT_DATA['world_width']
 WasJump = False
 prev_direction = 0
 
@@ -223,6 +224,7 @@ def place_in_range(x, y, d, b = 2) -> bool:
 # Game loop
 def main():
     global running, screen_size, screen_width, screen_height, WasJump, prev_direction, MousePos
+    
     while running:
         dt = clock.tick(50) / 1000  # Calculate time per frame
         MousePos = pygame.mouse.get_pos()
@@ -319,9 +321,11 @@ def main():
             if need_update_pos:
                 print("sending velocity")
                 cliNet.send(network.ClientPlayerXVelocity(speed_update / pixel_scaling))
-
+        Worldwidth_percent = (position2D.x/pixel_scaling)/Worldwidth
+        movable_width = 7680-screen_width
+        X_value = Worldwidth_percent*movable_width
         # Draw background
-        screen.blit(bg, (0, 0))
+        screen.blit(bg, (-X_value,0))
 
         # Draw world (visible chunks)
         draw_world(chunkCoord)
