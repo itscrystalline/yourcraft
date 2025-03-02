@@ -1,9 +1,9 @@
+#![deny(clippy::unwrap_used)]
 use crate::world::World;
 use clap::{Parser, Subcommand};
 use console::Stats;
 use log::{error, info, LevelFilter};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
-use serde_pickle::error;
 use std::cmp::max;
 use std::io;
 use std::num::NonZeroU32;
@@ -121,8 +121,8 @@ async fn main() -> io::Result<()> {
     let mut physics_tick = time::interval(Duration::from_millis(
         1000 / constants::PHYS_TICKS_PER_SECOND,
     ));
-    let mut physics_update_tick = time::interval(Duration::from_millis(
-        1000 / constants::PHYS_UPDATES_PER_SECOND,
+    let mut packet_update_tick = time::interval(Duration::from_millis(
+        1000 / constants::PACKET_UPDATES_PER_SECOND,
     ));
     let mut heartbeat_tick =
         time::interval(Duration::from_secs(constants::SECONDS_BETWEEN_HEARTBEATS));
@@ -145,7 +145,9 @@ async fn main() -> io::Result<()> {
         Ok(w) => w,
         Err(e) => {
             let _ = to_console.send(console::ToConsoleType::Quit);
-            console_thread.await.unwrap();
+            console_thread
+                .await
+                .expect("console thread failed to terminate");
             error!("Error creating world: {e}");
             exit(1);
         }
@@ -165,7 +167,9 @@ async fn main() -> io::Result<()> {
         Ok(s) => s,
         Err(e) => {
             let _ = to_console.send(console::ToConsoleType::Quit);
-            console_thread.await.unwrap();
+            console_thread
+                .await
+                .expect("console thread failed to terminate");
             error!("error binding port: {e}");
             exit(1);
         }
@@ -192,8 +196,9 @@ async fn main() -> io::Result<()> {
             _ = physics_tick.tick() => {
                 phys_last_tick_time = world.physics_tick(to_network.clone()).await?;
             }
-            _ = physics_update_tick.tick() => {
+            _ = packet_update_tick.tick() => {
                 world.flush_physics_queue(to_network.clone()).await?;
+                world.flush_block_queue(to_network.clone()).await?;
             }
             _ = world_tick.tick() => {
                 last_tick_time = world.world_tick(to_console.clone(), to_network.clone()).await?;
@@ -257,8 +262,12 @@ async fn main() -> io::Result<()> {
         .await?;
     let _ = to_console.send(console::ToConsoleType::Quit);
     let _ = to_network.send(network::NetworkThreadMessage::Shutdown);
-    console_thread.await.unwrap();
-    network_thread.await.unwrap();
+    console_thread
+        .await
+        .expect("console thread failed to terminate");
+    network_thread
+        .await
+        .expect("network thread failed to terminate");
 
     info!("Server shutdown complete after being up for {uptime:?}.");
     Ok(())

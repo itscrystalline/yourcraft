@@ -1,7 +1,7 @@
 use crate::console::ToConsole;
 use crate::network::{ClientConnection, PacketTypes, ToNetwork};
-use crate::player::{Player, Surrounding};
-use crate::{c_debug, c_error, c_info, WorldType};
+use crate::player::{Item, Player, Surrounding};
+use crate::{c_debug, c_error, c_info, constants, WorldType};
 use fast_poisson::Poisson;
 use itertools::Itertools;
 use noise::{NoiseFn, OpenSimplex, Perlin};
@@ -49,6 +49,12 @@ pub struct PositionUpdate {
 }
 
 #[derive(Debug)]
+pub struct BatchBlockUpdate {
+    pub positions: Vec<(u32, u32)>,
+    pub recievers: Vec<SocketAddr>,
+}
+
+#[derive(Debug)]
 pub struct World {
     pub width: u32,
     pub height: u32,
@@ -59,6 +65,7 @@ pub struct World {
     pub players: Vec<ClientConnection>,
     player_loaded: Vec<Vec<u32>>,
     pub physics_update_queue: HashMap<u32, PositionUpdate>,
+    block_update_queue: HashMap<Block, HashMap<(u32, u32), BatchBlockUpdate>>,
     to_update: HashSet<(u32, u32, Block)>,
     pub spawn_point: u32,
     pub spawn_range: NonZeroU32,
@@ -81,8 +88,14 @@ pub struct Chunk {
 
 pub type BlockPos = (u32, u32, Block);
 
+pub struct BlockProperties {
+    solid: bool,
+    item: Option<Item>,
+    hardness: u8,
+}
+
 macro_rules! define_blocks {
-    ($($name:ident = ($id:expr, $solid:expr)),* $(,)?) => {
+    ($($name: ident = $id: expr => { $($prop_name:ident : $prop_value:expr),* $(,)? }),* $(,)?) => {
         #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash, EnumString)]
         pub enum Block {
             $($name = $id),*
@@ -101,9 +114,21 @@ macro_rules! define_blocks {
             fn from(block: Block) -> u8 { block as u8 }
         }
 
+        impl Block {
+            fn properties(self) -> BlockProperties {
+                match self {
+                    $(Block::$name => BlockProperties { $($prop_name: $prop_value),* }),*
+                }
+            }
+        }
+
         pub fn is_solid(block: Block) -> bool {
-            match block {
-                $(Block::$name => $solid),*
+            block.properties().solid
+        }
+
+        impl From<Block> for Option<Item> {
+            fn from(block: Block) -> Self {
+                block.properties().item
             }
         }
     };
@@ -251,6 +276,7 @@ impl World {
                 player_loaded,
                 to_update: HashSet::new(),
                 physics_update_queue: HashMap::new(),
+                block_update_queue: HashMap::new(),
                 spawn_point,
                 spawn_range,
             })
@@ -328,6 +354,13 @@ impl World {
                 simplex.get([x * 0.001 * 32.0, y * 0.001 * 32.0]).abs()
             }
         };
+        let ore_generator = {
+            let seed = seed_generator.next_u32();
+            move |x, y| {
+                let simplex = OpenSimplex::new(seed);
+                simplex.get([x * 0.008 * 64.0, y * 0.008 * 64.0]).abs()
+            }
+        };
         let mut trees = Poisson::<1>::new()
             .with_seed(seed_generator.next_u64())
             .with_dimensions([world.width as f64], terrain_settings.tree_spawn_radius)
@@ -384,6 +417,15 @@ impl World {
                         let _ = world.generate_tree_at(x, top_y + 1);
                     }
                     next_tree = trees.next();
+                }
+            }
+
+            for y in 0..=u32::max(height, terrain_settings.water_height) {
+                let noise_here = ore_generator(x as f64, y as f64);
+                if world.get_block(x, y)? == Block::Stone{
+                    if noise_here < cave_gen_size {
+                        world.set_block(x, y, Block::Leaves)?;
+                    }
                 }
             }
         }
@@ -521,7 +563,7 @@ impl World {
             &self.player_loaded[(chunk_y * self.width_chunks + chunk_x) as usize];
         let players_loading = players_loading_ids
             .iter()
-            .map(|&id| self.players.iter().find(|&conn| conn.id == id).unwrap())
+            .flat_map(|&id| self.players.iter().find(|&conn| conn.id == id))
             .collect();
         Ok(players_loading)
     }
@@ -570,24 +612,51 @@ impl World {
         }
     }
 
+    pub fn check_block_placment(&self, pos_x: u32, pos_y: u32) -> bool {
+        let SurroundingBlocks {
+            top,
+            bottom,
+            left,
+            right,
+        } = self.get_neighbours(pos_x, pos_y);
+        [top, bottom, left, right]
+            .into_iter()
+            .flatten()
+            .any(|(_, _, bl)| is_solid(bl))
+    }
+
     pub fn set_block(&mut self, pos_x: u32, pos_y: u32, block: Block) -> Result<(), WorldError> {
         self.raw_set_block(pos_x, pos_y, block)?;
         // update block
-        if block == Block::Water {
-            let SurroundingBlocks {
-                bottom,
-                left,
-                right,
-                ..
-            } = self.get_neighbours(pos_x, pos_y);
-            [bottom, left, right]
-                .into_iter()
-                .flatten()
-                .for_each(|(x, y, bl)| {
-                    if !is_solid(bl) && bl != Block::Water {
-                        self.to_update.insert((x, y, Block::Water));
-                    }
-                });
+        let SurroundingBlocks {
+            top,
+            bottom,
+            left,
+            right,
+            ..
+        } = self.get_neighbours(pos_x, pos_y);
+
+        match block {
+            Block::Water => {
+                [bottom, left, right]
+                    .into_iter()
+                    .flatten()
+                    .for_each(|(x, y, bl)| {
+                        if !is_solid(bl) && bl != Block::Water {
+                            self.to_update.insert((x, y, Block::Water));
+                        }
+                    });
+            }
+            Block::Air => {
+                let has_surrounding_water = [top, left, right]
+                    .into_iter()
+                    .flatten()
+                    .any(|(_, _, bl)| bl == Block::Water);
+                if has_surrounding_water {
+                    self.to_update.insert((pos_x, pos_y, Block::Water));
+                }
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -675,20 +744,6 @@ impl World {
                     kick_msg
                 );
 
-                let last_location = (
-                    connection.server_player.x.round() as u32,
-                    connection.server_player.y.round() as u32,
-                );
-                let last_location_chunk_pos = self
-                    .get_chunk_block_is_in(last_location.0, last_location.1)
-                    .unwrap();
-                let players_loading_chunk = self
-                    .get_list_of_players_loading_chunk(
-                        last_location_chunk_pos.0,
-                        last_location_chunk_pos.1,
-                    )
-                    .unwrap();
-
                 encode_and_send!(
                     to_network,
                     PacketTypes::ServerKick {
@@ -697,17 +752,29 @@ impl World {
                     connection.addr
                 );
 
-                for player in self.players.iter() {
-                    if players_loading_chunk.contains(&player) {
+                let last_location = (
+                    connection.server_player.x.round() as u32,
+                    connection.server_player.y.round() as u32,
+                );
+                if let Ok((chunk_x, chunk_y)) =
+                    self.get_chunk_block_is_in(last_location.0, last_location.1)
+                {
+                    let players_loading_chunk = self
+                        .get_list_of_players_loading_chunk(chunk_x, chunk_y)
+                        .unwrap_or_default();
+                    players_loading_chunk.into_iter().for_each(|conn| {
                         encode_and_send!(
                             to_network,
                             PacketTypes::ServerPlayerLeaveLoaded {
                                 player_name: connection.name.clone(),
-                                player_id: connection.id,
+                                player_id: connection.id
                             },
-                            player.addr
+                            conn.addr
                         );
-                    }
+                    });
+                }
+
+                for player in self.players.iter() {
                     encode_and_send!(
                         to_network,
                         PacketTypes::ServerPlayerLeave {
@@ -811,9 +878,48 @@ impl World {
             })
             .collect();
         self.to_update.retain(|pos| pos.2 != Block::Water);
-        for (x, y) in to_update {
-            self.set_block_and_notify(to_network.clone(), x, y, Block::Water)
-                .await?;
+        if to_update.len() <= constants::PACKET_BATCH_THRESHOLD {
+            for (x, y) in to_update {
+                self.set_block_and_notify(to_network.clone(), x, y, Block::Water)
+                    .await?;
+            }
+        } else {
+            for pos in to_update {
+                let chunk_pos = self.get_chunk_block_is_in(pos.0, pos.1)?;
+                let recievers = self
+                    .get_list_of_players_loading_chunk(chunk_pos.0, chunk_pos.1)?
+                    .into_iter()
+                    .map(|conn| conn.addr)
+                    .collect();
+                match self.block_update_queue.get_mut(&Block::Water) {
+                    Some(old_queue) => match old_queue.get_mut(&chunk_pos) {
+                        Some(old_chunk_queue) => {
+                            old_chunk_queue.positions.push(pos);
+                        }
+                        None => {
+                            old_queue.insert(
+                                chunk_pos,
+                                BatchBlockUpdate {
+                                    positions: vec![pos],
+                                    recievers,
+                                },
+                            );
+                        }
+                    },
+                    None => {
+                        let mut map: HashMap<(u32, u32), BatchBlockUpdate> = HashMap::new();
+                        map.insert(
+                            chunk_pos,
+                            BatchBlockUpdate {
+                                positions: vec![pos],
+                                recievers,
+                            },
+                        );
+                        self.block_update_queue.insert(Block::Water, map);
+                    }
+                }
+                self.set_block(pos.0, pos.1, Block::Water)?;
+            }
         }
         Ok(())
     }
@@ -1003,7 +1109,7 @@ impl World {
                     recievers,
                 },
             )| {
-                recievers.iter().for_each(|&reciever| {
+                recievers.into_iter().for_each(|reciever| {
                     encode_and_send!(
                         to_network,
                         PacketTypes::ServerPlayerUpdatePos {
@@ -1016,6 +1122,30 @@ impl World {
                 });
             },
         );
+        Ok(())
+    }
+
+    pub async fn flush_block_queue(&mut self, to_network: ToNetwork) -> io::Result<()> {
+        self.block_update_queue.drain().for_each(|(block, chunks)| {
+            chunks.into_values().for_each(
+                |BatchBlockUpdate {
+                     positions,
+                     recievers,
+                 }| {
+                    recievers.into_iter().for_each(|addr| {
+                        encode_and_send!(
+                            to_network,
+                            PacketTypes::ServerBatchUpdateBlock {
+                                block: block.into(),
+                                batch: positions.clone()
+                            },
+                            addr
+                        );
+                    });
+                },
+            );
+        });
+
         Ok(())
     }
 
@@ -1060,10 +1190,11 @@ impl Chunk {
 }
 
 define_blocks! {
-    Air = (0, false),
-    Grass = (1, true),
-    Stone = (2, true),
-    Wood = (3, true),
-    Leaves = (4, true),
-    Water = (5, false),
+    Air = 0 => { solid: false, item: None, hardness: 0 },
+    Grass = 1 => { solid: true, item: Some(Item::Grass), hardness: 0 },
+    Stone = 2 => { solid: true, item: Some(Item::Stone), hardness: 1 },
+    Wood = 3 => { solid: true, item: Some(Item::Wood), hardness: 0 },
+    Leaves = 4 => { solid: true, item: Some(Item::Leaves), hardness: 0},
+    Water = 5 => { solid: false, item: Some(Item::WaterBucket), hardness: 0},
+    Ores = 6 => { solid: false, item: Some(Item::Ores), hardness: 1},
 }

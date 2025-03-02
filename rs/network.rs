@@ -1,7 +1,7 @@
 use crate::console::ToConsole;
-use crate::player::{self, Player};
-use crate::world::{Chunk, World, WorldError};
-use crate::{c_debug, c_error, c_info, c_warn};
+use crate::player::{Item, ItemStack, Player};
+use crate::world::{is_solid, Block, Chunk, World, WorldError};
+use crate::{c_debug, c_error, c_info, c_warn, constants};
 use rand::prelude::*;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -29,10 +29,10 @@ pub struct ClientConnection {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Hash, PartialEq)]
 pub struct NetworkChunk {
-    pub size: u32,
-    pub chunk_x: u32,
-    pub chunk_y: u32,
-    pub blocks: Vec<u8>,
+    size: u32,
+    chunk_x: u32,
+    chunk_y: u32,
+    blocks: Vec<u8>,
 }
 
 impl From<Chunk> for NetworkChunk {
@@ -42,6 +42,21 @@ impl From<Chunk> for NetworkChunk {
             chunk_x: chunk.chunk_x,
             chunk_y: chunk.chunk_y,
             blocks: chunk.blocks.into_par_iter().map(|bl| bl.into()).collect(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub struct NetworkItemStack {
+    item: u8,
+    count: u8,
+}
+
+impl From<ItemStack> for NetworkItemStack {
+    fn from(stack: ItemStack) -> Self {
+        Self {
+            item: stack.item.into(),
+            count: stack.count.get(),
         }
     }
 }
@@ -119,7 +134,6 @@ pub enum PacketTypes {
     },
     ClientGoodbye {},
     ClientPlaceBlock {
-        block: u8,
         x: u32,
         y: u32,
     },
@@ -127,6 +141,10 @@ pub enum PacketTypes {
         block: u8,
         x: u32,
         y: u32,
+    },
+    ServerBatchUpdateBlock {
+        block: u8,
+        batch: Vec<(u32, u32)>,
     },
     ClientPlayerXVelocity {
         vel_x: f32,
@@ -143,6 +161,30 @@ pub enum PacketTypes {
     },
     ServerHeartbeat {},
     ClientHeartbeat {},
+    ClientSendMessage {
+        msg: String,
+    },
+    ServerSendMessage {
+        player_name: String,
+        player_id: u32,
+        msg: String,
+    },
+    ClientBreakBlock {
+        x: u32,
+        y: u32,
+    },
+    ClientTryAttack {
+        player_id: u32,
+    },
+    ClientChangeSlot {
+        slot: u8,
+    },
+    ServerUpdateHealth {
+        health: f32,
+    },
+    ServerUpdateInventory {
+        inv: [Option<NetworkItemStack>; 9],
+    },
 }
 
 #[macro_export]
@@ -175,7 +217,11 @@ pub fn init(
         let (to_main, mut from_main) = (to_main, from_main);
         let mut buf = [0u8; 1024];
         let mut network_error_strikes = 0u8;
-        c_info!(to_console, "Listening on {}", socket.local_addr().unwrap());
+        c_info!(
+            to_console,
+            "Listening on {}",
+            socket.local_addr().expect("cannot get socket address")
+        );
         loop {
             tokio::select! {
                 maybe_packet_incoming = socket.recv_from(&mut buf) => {
@@ -287,7 +333,7 @@ pub async fn process_client_packet(
             }
         };
     }
-    macro_rules! unwrap_or_return_early {
+    macro_rules! result_unwrap_or_return_early {
         ($to_console: expr, $to_try: expr, $err_msg: expr) => {
             match $to_try {
                 Ok(ok) => ok,
@@ -298,11 +344,22 @@ pub async fn process_client_packet(
             }
         };
     }
+    macro_rules! option_unwrap_or_return_early {
+        ($to_console: expr, $to_try: expr, $err_msg: expr) => {
+            match $to_try {
+                Some(ok) => ok,
+                None => {
+                    c_error!($to_console, $err_msg);
+                    return Ok(());
+                }
+            }
+        };
+    }
     match packet {
         PacketTypes::ClientHello { name } => {
             c_info!(to_console, "{} joined the server!", name);
             let spawn_x = world.get_spawn();
-            let connection = unwrap_or_return_early!(
+            let connection = result_unwrap_or_return_early!(
                 to_console,
                 ClientConnection::new_at(addr, world, spawn_x, name),
                 "cannot spawn player: {}"
@@ -328,10 +385,10 @@ pub async fn process_client_packet(
             // notify other players and the ones loading the chunk
             let spawn_chunk_pos = world
                 .get_chunk_block_is_in(spawn_block_pos.0, spawn_block_pos.1)
-                .unwrap();
+                .unwrap_or_else(|_| unreachable!());
             let players_loading_chunk = world
                 .get_list_of_players_loading_chunk(spawn_chunk_pos.0, spawn_chunk_pos.1)
-                .unwrap();
+                .unwrap_or_else(|_| unreachable!());
 
             for player in world.players.iter() {
                 encode_and_send!(
@@ -389,12 +446,12 @@ pub async fn process_client_packet(
                         connection.server_player.x.round() as u32,
                         connection.server_player.y.round() as u32,
                     );
-                    let last_location_chunk_pos = unwrap_or_return_early!(
+                    let last_location_chunk_pos = result_unwrap_or_return_early!(
                         to_console,
                         world.get_chunk_block_is_in(last_location.0, last_location.1),
                         "cannot get chunk: {}"
                     );
-                    let players_loading_chunk = unwrap_or_return_early!(
+                    let players_loading_chunk = result_unwrap_or_return_early!(
                         to_console,
                         world.get_list_of_players_loading_chunk(
                             last_location_chunk_pos.0,
@@ -426,34 +483,117 @@ pub async fn process_client_packet(
                 }
             };
         }
-        PacketTypes::ClientPlaceBlock { block, x, y } => {
-            assert_player_exists!(to_console, world, addr, par_iter, find_any, player_conn, {
-                let (chunk_x, chunk_y) = unwrap_or_return_early!(
+        PacketTypes::ClientPlaceBlock { x, y } | PacketTypes::ClientBreakBlock { x, y } => {
+            assert_player_exists!(to_console, world, addr, par_iter, position_any, idx, {
+                let (chunk_x, chunk_y) = result_unwrap_or_return_early!(
                     to_console,
                     world.get_chunk_block_is_in(x, y),
                     "error while placing block: {}"
                 );
-                let players_loading_chunk = unwrap_or_return_early!(
+                let players_loading_chunk = result_unwrap_or_return_early!(
                     to_console,
                     world.get_list_of_players_loading_chunk(chunk_x, chunk_y),
                     "error while placing block: {}"
                 );
-                if !players_loading_chunk.contains(&player_conn) {
-                    c_error!(to_console, "player {} (addr: {}) tried to place a block in a position they themselves have not loaded!", player_conn.name, player_conn.addr);
+                if !players_loading_chunk.contains(&&world.players[idx]) {
+                    c_error!(to_console, "player {} (addr: {}) tried to place a block in a position they themselves have not loaded!", world.players[idx].name, world.players[idx].addr);
                     return Ok(());
                 }
-                match world
-                    .set_block_and_notify(to_network.clone(), x, y, block.into())
-                    .await
+                let (player_x, player_y, x_i, y_i) = (
+                    world.players[idx].server_player.x.round() as i32,
+                    world.players[idx].server_player.y.round() as i32,
+                    x as i32,
+                    y as i32,
+                );
+
+                if ((x_i - player_x).pow(2) + (y_i - player_y).pow(2))
+                    > constants::MAX_INTERACT_RANGE.pow(2) as i32
                 {
-                    Ok(_) => (),
-                    Err(e) => match e {
-                        WorldError::NetworkError(e) => {
-                            c_error!(to_console, "error while notifying clients: {e}")
+                    c_warn!(
+                        to_console,
+                        "player {} tried to interact outside of their max range!",
+                        world.players[idx].name
+                    );
+                    return Ok(());
+                }
+
+                match packet {
+                    PacketTypes::ClientBreakBlock { x, y } => {
+                        let block = result_unwrap_or_return_early!(
+                            to_console,
+                            world.get_block(x, y),
+                            "cannot get block: {}"
+                        );
+                        if is_solid(block) {
+                            let item: Option<Item> = block.into();
+                            if let Some(item) = item {
+                                let stack: ItemStack = item.into();
+                                let _ = world.players[idx].server_player.insert(stack);
+                                world.players[idx].server_player.notify_inventory_changed(
+                                    to_network.clone(),
+                                    world.players[idx].addr,
+                                );
+                                if let Err(e) = world
+                                    .set_block_and_notify(to_network.clone(), x, y, Block::Air)
+                                    .await
+                                {
+                                    match e {
+                                        WorldError::NetworkError(e) => {
+                                            c_error!(
+                                                to_console,
+                                                "error while notifying clients: {e}"
+                                            )
+                                        }
+                                        _ => c_error!(to_console, "error while placing block: {e}"),
+                                    }
+                                }
+                            }
                         }
-                        _ => c_error!(to_console, "error while placing block: {e}"),
-                    },
-                };
+                    }
+                    PacketTypes::ClientPlaceBlock { x, y } => {
+                        let block_there = result_unwrap_or_return_early!(
+                            to_console,
+                            world.get_block(x, y),
+                            "cannot get block: {}"
+                        );
+                        if !is_solid(block_there) && world.check_block_placment(x, y) {
+                            if let Some(item) =
+                                world.players[idx].server_player.get_current_itemstack()
+                            {
+                                if let Some(block) = item.item.into() {
+                                    let place_result = world
+                                        .set_block_and_notify(to_network.clone(), x, y, block)
+                                        .await;
+
+                                    match place_result {
+                                        Ok(_) => {
+                                            world.players[idx].server_player.consume_current();
+                                            world.players[idx]
+                                                .server_player
+                                                .notify_inventory_changed(
+                                                    to_network,
+                                                    world.players[idx].addr,
+                                                );
+                                        }
+                                        Err(e) => match e {
+                                            WorldError::NetworkError(e) => {
+                                                c_error!(
+                                                    to_console,
+                                                    "error while notifying clients: {e}"
+                                                )
+                                            }
+                                            _ => c_error!(
+                                                to_console,
+                                                "error while placing block: {e}"
+                                            ),
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => unreachable!(),
+                }
             })
         }
         PacketTypes::ClientPlayerJump {} => {
@@ -518,7 +658,7 @@ pub async fn process_client_packet(
                     old_player_conn.server_player.x,
                     old_player_conn.server_player.y,
                 );
-                world.players[idx].server_player = unwrap_or_return_early!(
+                world.players[idx].server_player = result_unwrap_or_return_early!(
                     to_console,
                     Player::spawn_at(world, spawn),
                     "cannot spawn player: {}"
@@ -538,6 +678,64 @@ pub async fn process_client_packet(
                     player_conn.connection_alive = true;
                 }
             )
+        }
+        PacketTypes::ClientSendMessage { msg } => {
+            assert_player_exists!(to_console, world, addr, par_iter, find_any, player_conn, {
+                c_info!(to_console, "[CHAT] <{}> {}", player_conn.name, msg);
+                world.players.iter().for_each(|player| {
+                    encode_and_send!(
+                        to_network,
+                        PacketTypes::ServerSendMessage {
+                            player_name: player_conn.name.clone(),
+                            player_id: player_conn.id,
+                            msg: msg.clone()
+                        },
+                        player.addr
+                    );
+                });
+            })
+        }
+        PacketTypes::ClientTryAttack { player_id } => {
+            let attacker_idx = option_unwrap_or_return_early!(
+                to_console,
+                world.players.iter().position(|conn| conn.addr == addr),
+                "cannot find attacker"
+            );
+            let attacked_idx = option_unwrap_or_return_early!(
+                to_console,
+                world.players.iter().position(|conn| conn.id == player_id),
+                "cannot find attackee"
+            );
+            let attacker = &world.players[attacker_idx];
+            let attacked = &world.players[attacked_idx];
+            let (dist_x, dist_y) = (
+                attacker.server_player.x - attacked.server_player.x,
+                attacker.server_player.y - attacked.server_player.y,
+            );
+            if dist_x.powi(2) + dist_y.powi(2) <= constants::MAX_INTERACT_RANGE.pow(2) as f32 {
+                let mut attacked = attacked.clone();
+                let damage = attacker.server_player.get_current_damage();
+                attacked.server_player.health -= damage;
+                encode_and_send!(
+                    to_network,
+                    PacketTypes::ServerUpdateHealth {
+                        health: attacked.server_player.health
+                    },
+                    attacked.addr
+                );
+
+                let magnitude = (dist_x.powi(2) + dist_y.powi(2)).sqrt();
+                let (norm_x, norm_y) = (dist_x / magnitude, dist_y / magnitude);
+                attacked.server_player.acceleration.x = norm_x * constants::KNOCKBACK_POWER;
+                attacked.server_player.acceleration.y = norm_y * constants::KNOCKBACK_POWER;
+
+                world.players[attacked_idx] = attacked;
+            }
+        }
+        PacketTypes::ClientChangeSlot { slot } => {
+            assert_player_exists!(to_console, world, addr, par_iter, position_any, idx, {
+                world.players[idx].server_player.selected_slot = slot;
+            })
         }
 
         _ => {

@@ -1,6 +1,7 @@
 import math
 import sys
 import pygame
+import pygame.gfxdraw
 import classic_component
 import classic_entity
 import network
@@ -27,6 +28,7 @@ clock = pygame.time.Clock()
 
 # Font
 font = pygame.font.SysFont("Arial", 20)
+message_font = pygame.font.SysFont("Arial", 60)
 
 # Set up colors
 WHITE = (255, 255, 255)
@@ -34,11 +36,20 @@ BLUE = (0, 0, 255)
 
 # Entities
 currentPlayer = classic_entity.Player()
-currentPlayer.keys = [pygame.K_a, pygame.K_d, pygame.K_e, pygame.K_q, pygame.K_SPACE]
+# K_RETURN is [Enter]
+currentPlayer.keys = [pygame.K_a, pygame.K_d, pygame.K_e, pygame.K_q, pygame.K_SPACE, pygame.K_RETURN, pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5, pygame.K_6, pygame.K_7, pygame.K_8, pygame.K_9]
 position2D = currentPlayer.getComponent("transform2D").getVariable("position")
-speed = 10 * pixel_scaling
+speed = 5 * pixel_scaling
 
+# Other players
 otherPlayers = {}
+
+# Messages' "queue"
+messages = []
+client_message = ""
+MAX_MESSAGES = 50
+is_chatting = False
+chat_key_pressing = False
 
 # World
 World = {}
@@ -48,10 +59,12 @@ WorldDelta = classic_component.Velocity2D()
 # MousePos
 MousePos = pygame.mouse.get_pos()
 
+
 # Block Types
 def load(name):
     file = f"{os.path.dirname(os.path.realpath(__file__))}/resources/{name}"
-    return pygame.image.load(file) 
+    return pygame.image.load(file)
+
 
 def load_resource(name):
     pic = load(name)
@@ -62,6 +75,8 @@ def load_resource(name):
 BlockType = list(
     map(load_resource, ["grassblock.png", "stoneblock.png", "woodblock.png", "leaves.png", "waterblock.png"]))
 bg = load("background2.png").convert_alpha()
+
+Non_Solid = [0, 5]
 
 # Set connection
 cliNet = network.ServerConnection("127.0.0.1")
@@ -95,7 +110,7 @@ def NetworkThread():
     while True:
         time.sleep(0.016)  # Sleep for 16ms (for approx. 60FPS)
         receiving = cliNet.recv()
-        print(receiving)
+        # print(receiving)
 
         # Synchronize access to the shared resource
         with network_lock:
@@ -133,12 +148,18 @@ def NetworkThread():
                     pass
             elif receiving['t'] == network.UPDATE_BLOCK:
                 if (UpdateChunk := World.get((int(receiving['data']['x'] // 16),
-                                             int(receiving['data']['y'] // 16)))) is not None:
-                    print((15 - int(receiving['data']['x'] % 16 // pixel_scaling),
-                                 15 - int(receiving['data']['y'] % 16 // pixel_scaling)))
+                                              int(receiving['data']['y'] // 16)))) is not None:
                     UpdateChunk[(15 - int(receiving['data']['x'] % 16),
                                  15 - int(receiving['data']['y'] % 16))] = \
-                                receiving['data']['block']
+                        receiving['data']['block']
+            elif receiving['t'] == network.BATCH_UPDATE_BLOCK:
+                for x, y in receiving['data']['batch']:
+                    if (UpdateChunk := World.get((int(x // 16),
+                                              int(y // 16)))) is not None:
+                        UpdateChunk[(15 - int(x % 16),
+                                     15 - int(y % 16))] = receiving['data']['block']
+            elif receiving['t'] == network.UPDATE_INVENTORY:
+                print(receiving['data'])
 
 
 # Draw world
@@ -175,7 +196,6 @@ def draw_world(chunkCoord):
                     if blockType > 0:
                         screen.blit(BlockType[blockType - 1], (blockScreenPos[0], blockScreenPos[1]))
 
-
             else:
                 if (loadChunkX < 0) or (loadChunkY < 0):
                     continue
@@ -187,9 +207,9 @@ def draw_world(chunkCoord):
 def draw_other_players():
     for eachPlayer in otherPlayers.values():
         pygame.draw.rect(screen, WHITE, (
-        eachPlayer['pos_x'] * pixel_scaling - position2D.x + screen_width / 2 - pixel_scaling / 2,
-        position2D.y - eachPlayer['pos_y'] * pixel_scaling + screen_height / 2 - pixel_scaling, pixel_scaling,
-        2 * pixel_scaling))
+            eachPlayer['pos_x'] * pixel_scaling - position2D.x + screen_width / 2 - pixel_scaling / 2,
+            position2D.y - eachPlayer['pos_y'] * pixel_scaling + screen_height / 2 - pixel_scaling, pixel_scaling,
+            2 * pixel_scaling))
 
 
 # Sync Server
@@ -209,22 +229,39 @@ def sync_data():
 
                 protocolValue.clear()
 
+
 # Get block
 def get_block(x, y) -> int:
-    return World[(int(x // (16 * pixel_scaling)), int(y // (16 * pixel_scaling)))] \
-        [(15 - int(x % (16 * pixel_scaling) // pixel_scaling), 15 - int(y % (16 * pixel_scaling) // pixel_scaling))]
+    try:
+        if x < 0 or y < 0:
+            return -1
+        return World[(int(x // (16 * pixel_scaling)), int(y // (16 * pixel_scaling)))] \
+            [(15 - int(x % (16 * pixel_scaling) // pixel_scaling), 15 - int(y % (16 * pixel_scaling) // pixel_scaling))]
+    except:
+        return -1
+
 
 # Define placement range
-def place_in_range(x, y, d, b = 2) -> bool:
-    if (d[0]**2 + d[1]**2) <= 64 or (d[0]**2 + (d[1]-1)**2) <= 64:
-        cliNet.send(network.ClientPlaceBlock(b, x, y))
+def place_in_range(x, y, d) -> bool:
+    if (d[0] ** 2 + d[1] ** 2) <= 64 or (d[0] ** 2 + (d[1] - 1) ** 2) <= 64:
+        # if (UpdateChunk := World.get((int(x // 16), int(y // 16)))) is not None:
+            # UpdateChunk[(15 - int(x % 16), 15 - int(y % 16))] = -2
+        cliNet.send(network.ClientPlaceBlock(x, y))
         return True
     return False
 
+
+# Define break range
+def break_in_range(x, y, d) -> bool:
+    if (d[0] ** 2 + d[1] ** 2) <= 64 or (d[0] ** 2 + (d[1] - 1) ** 2) <= 64:
+        cliNet.send(network.ClientBreakBlock(x, y))
+        return True
+    return False
+
+
 # Game loop
 def main():
-    global running, screen_size, screen_width, screen_height, WasJump, prev_direction, MousePos
-    
+    global running, screen_size, screen_width, screen_height, WasJump, prev_direction, MousePos, is_chatting, chat_key_pressing, client_message
     while running:
         dt = clock.tick(50) / 1000  # Calculate time per frame
         MousePos = pygame.mouse.get_pos()
@@ -237,6 +274,16 @@ def main():
                 screen_size = screen.get_size()
                 screen_width = screen_size[0]
                 screen_height = screen_size[1]
+            elif event.type == pygame.KEYDOWN:
+                if is_chatting:
+                    if event.key == pygame.K_BACKSPACE and client_message.__len__() > 0:
+                        client_message = client_message[:-1]
+                    elif event.key == pygame.K_RETURN:
+                        continue
+                    else:
+                        client_message += event.unicode
+                elif event.key in currentPlayer.keys[6:15]:
+                    cliNet.send(network.ClientChangeSlot(event.key-49))
 
         # Update from server :)
         sync_data()
@@ -247,72 +294,82 @@ def main():
         keys = pygame.key.get_pressed()
 
         chunkCoord = (int(position2D.x // (16 * pixel_scaling)), int(position2D.y // (16 * pixel_scaling)))
-        chunkPos = (15 - int(position2D.x % (16 * pixel_scaling) // pixel_scaling),
-                    15 - int(position2D.y % (16 * pixel_scaling) // pixel_scaling))
 
         need_update_pos = False
         speed_update = 0
-        if keys[currentPlayer.keys[0]]:  # Move left
-            position2D.x -= speed * dt
-            WorldDelta.vx -= speed * dt
-            movement_update = True
-            if prev_direction != -1:
-                need_update_pos = True
-                speed_update = -speed * dt
-                prev_direction = -1
-        elif keys[currentPlayer.keys[1]]:  # Move right
-            position2D.x += speed * dt
-            WorldDelta.vx += speed * dt
-            movement_update = True
-            if prev_direction != 1:
-                need_update_pos = True
-                speed_update = speed * dt
-                prev_direction = 1
-        else:
-            if prev_direction != 0:
-                print("stopped")
+        if not is_chatting:
+            if keys[currentPlayer.keys[0]] and (get_block(position2D.x-1, position2D.y) in Non_Solid) and (get_block(position2D.x-1, position2D.y+20) in Non_Solid):  # Move left
+                position2D.x -= speed * dt
+                WorldDelta.vx -= speed * dt
                 movement_update = True
-                need_update_pos = True
-                speed_update = 0
-                prev_direction = 0
+                if prev_direction != -1:
+                    need_update_pos = True
+                    speed_update = -speed * dt
+                    prev_direction = -1
+            elif keys[currentPlayer.keys[1]] and (get_block(position2D.x+1, position2D.y) in Non_Solid) and (get_block(position2D.x+1, position2D.y+20) in Non_Solid):  # Move right
+                position2D.x += speed * dt
+                WorldDelta.vx += speed * dt
+                movement_update = True
+                if prev_direction != 1:
+                    need_update_pos = True
+                    speed_update = speed * dt
+                    prev_direction = 1
+            else:
+                if prev_direction != 0:
+                    movement_update = True
+                    need_update_pos = True
+                    speed_update = 0
+                    prev_direction = 0
 
-        if keys[currentPlayer.keys[2]]:  # Place block
-            NormalX = int((position2D.x - screen_width/2 + MousePos[0] + pixel_scaling/2) // pixel_scaling)
-            NormalY = int((position2D.y + screen_height/2 - MousePos[1] + pixel_scaling) // pixel_scaling)
-            print(NormalX, NormalY)
-            if NormalX >= 0 and NormalY >= 0:
-                dScreenMouse = ((MousePos[0] - screen_width/2) / pixel_scaling,
-                                (MousePos[1] - screen_height/2) / pixel_scaling)
-                place_in_range(NormalX, NormalY, dScreenMouse, 2)
+            if keys[currentPlayer.keys[2]]:  # Place block
+                NormalX = int((position2D.x - screen_width / 2 + MousePos[0] + pixel_scaling / 2) // pixel_scaling)
+                NormalY = int((position2D.y + screen_height / 2 - MousePos[1] + pixel_scaling) // pixel_scaling)
+                # print(NormalX, NormalY)
+                if NormalX >= 0 and NormalY >= 0:
+                    dScreenMouse = ((MousePos[0] - screen_width / 2) / pixel_scaling,
+                                    (MousePos[1] - screen_height / 2) / pixel_scaling)
+                    place_in_range(NormalX, NormalY, dScreenMouse)
 
-        if keys[currentPlayer.keys[3]]:  # Remove block
-            NormalX = int((position2D.x - screen_width / 2 + MousePos[0] + pixel_scaling/2) // pixel_scaling)
-            NormalY = int((position2D.y + screen_height / 2 - MousePos[1] + pixel_scaling) // pixel_scaling)
-            print(NormalX, NormalY)
-            if NormalX >= 0 and NormalY >= 0:
-                dScreenMouse = ((MousePos[0] - screen_width / 2) / pixel_scaling,
-                                (MousePos[1] - screen_height / 2) / pixel_scaling)
-                place_in_range(NormalX, NormalY, dScreenMouse, 0)
-        if keys[currentPlayer.keys[4]]:  # Jump
-            if not WasJump:
-                cliNet.send(network.ClientPlayerJump())
-                WasJump = True
-        else:
-            WasJump = False
+            if keys[currentPlayer.keys[3]]:  # Remove block
+                NormalX = int((position2D.x - screen_width / 2 + MousePos[0] + pixel_scaling / 2) // pixel_scaling)
+                NormalY = int((position2D.y + screen_height / 2 - MousePos[1] + pixel_scaling) // pixel_scaling)
+                # print(NormalX, NormalY)
+                if NormalX >= 0 and NormalY >= 0:
+                    dScreenMouse = ((MousePos[0] - screen_width / 2) / pixel_scaling,
+                                    (MousePos[1] - screen_height / 2) / pixel_scaling)
+                    break_in_range(NormalX, NormalY, dScreenMouse)
 
-        # Debug chunk
-        if keys[pygame.K_EQUALS]:
-            cliNet.send(network.ClientPlayerXVelocity(0))
-        if keys[pygame.K_w]:  # Move up
-            position2D.y += speed * dt
-            WorldDelta.vy += speed * dt
-            movement_update = True
-        if keys[pygame.K_s]:  # Move down
-            position2D.y -= speed * dt
-            WorldDelta.vy -= speed * dt
-            movement_update = True
+            if keys[currentPlayer.keys[4]]:  # Jump
+                if not WasJump:
+                    cliNet.send(network.ClientPlayerJump())
+                    WasJump = True
+            else:
+                WasJump = False
 
-        
+        # Enable chatting
+        if keys[currentPlayer.keys[5]] and is_chatting and not chat_key_pressing:
+            chat_key_pressing = True
+            is_chatting = False
+            if client_message != "":
+                cliNet.send(network.ClientSendMessage(client_message))
+                client_message = ""
+        elif keys[currentPlayer.keys[5]] and not is_chatting and not chat_key_pressing:
+            is_chatting = True
+            chat_key_pressing = True
+        elif not keys[currentPlayer.keys[5]] and chat_key_pressing:
+            chat_key_pressing = False
+
+        # # Debug chunk
+        # if keys[pygame.K_EQUALS]:
+        #     cliNet.send(network.ClientPlayerXVelocity(0))
+        # if keys[pygame.K_w]:  # Move up
+        #     position2D.y += speed * dt
+        #     WorldDelta.vy += speed * dt
+        #     movement_update = True
+        # if keys[pygame.K_s]:  # Move down
+        #     position2D.y -= speed * dt
+        #     WorldDelta.vy -= speed * dt
+        #     movement_update = True
 
         # Move world
         if movement_update:
@@ -335,7 +392,19 @@ def main():
 
         # Draw player
         pygame.draw.rect(screen, WHITE, (
-        screen_width / 2 - pixel_scaling / 2, screen_height / 2 - pixel_scaling, pixel_scaling, 2 * pixel_scaling))
+            screen_width / 2 - pixel_scaling / 2, screen_height / 2 - pixel_scaling, pixel_scaling, 2 * pixel_scaling))
+
+        # Draw player's name
+        name = font.render("test", 1, WHITE)
+        name_rect = name.get_rect()
+
+        screen.blit(name, (
+            screen_width / 2 - name_rect.center[0], screen_height / 2 - 2 * pixel_scaling - name_rect.center[1]))
+
+        if is_chatting:
+            # Draw client chat
+            pygame.gfxdraw.box(screen, (0, screen_height * 4 / 5, screen_width, screen_height / 10), (0, 0, 0, 64))
+            screen.blit(message_font.render(client_message, 1, WHITE), (0, screen_height * 4 / 5))
 
         # Debug FPS and Position
         screen.blit(font.render(f"{clock.get_fps():.2f} FPS", 1, WHITE), (0, 0))

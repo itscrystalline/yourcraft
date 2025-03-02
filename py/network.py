@@ -2,22 +2,31 @@ import pickle
 import socket
 
 HELLO = "ClientHello"
-PLAYER_COORDINATES = 2
-CHUNK_REQUEST = 3
+# PLAYER_COORDINATES
+# CHUNK_REQUEST
 CHUNK_UPDATE = "ServerChunkResponse"
-CHUNK_UNLOAD = 5
+# CHUNK_UNLOAD
 PLAYER_JOIN = "ServerPlayerJoin"
 PLAYER_ENTER_LOAD = "ServerPlayerEnterLoaded"
 PLAYER_LEAVE_LOAD = "ServerPlayerLeaveLoaded"
-PLAYER_LEAVE = 9
-GOODBYE = 10
-PLACE_BLOCK = 11
+# PLAYER_LEAVE
+# GOODBYE
+# PLACE_BLOCK
 UPDATE_BLOCK = "ServerUpdateBlock"
-PLAYER_JUMP = 14
+BATCH_UPDATE_BLOCK = "ServerBatchUpdateBlock"
+# PLAYER_JUMP
 PLAYER_UPDATE_POS = "ServerPlayerUpdatePos"
 KICK = "ServerKick"
 HEARTBEAT_SERVER = "ServerHeartbeat"
-HEARTBEAT_CLIENT = 18
+# HEARTBEAT_CLIENT
+SERVER_MESSAGE = "ServerSendMessage"
+# CLIENT_MESSAGE
+# BREAK_BLOCK
+# ATTACK_PLAYER
+# CHANGE_SLOT
+UPDATE_HEALTH = "ServerUpdateHealth"
+UPDATE_INVENTORY = "ServerUpdateInventory"
+
 
 
 class Packet:
@@ -36,7 +45,7 @@ class ServerConnection:
         self.socket.sendto(packet.serialize(), self.ip_port)
 
     def recv(self):
-        packet = pickle.loads(self.socket.recv(1024*16))
+        packet = pickle.loads(self.socket.recv(1024 * 16))
         return {
             "t": next(iter(packet.keys())),
             "data": next(iter(packet.values()))
@@ -63,8 +72,13 @@ class ClientRequestChunk(Packet):
 
 
 class ClientPlaceBlock(Packet):
-    def __init__(self, block, x, y):
-        self.block: int = block
+    def __init__(self, x, y):
+        self.x: int = x
+        self.y: int = y
+
+
+class ClientBreakBlock(Packet):
+    def __init__(self, x, y):
         self.x: int = x
         self.y: int = y
 
@@ -82,6 +96,23 @@ class ClientUnloadChunk(Packet):
     def __init__(self, x, y):
         self.chunk_coords_x = x
         self.chunk_coords_y = y
+
+
+class ClientSendMessage(Packet):
+    def __init__(self, msg):
+        self.msg = msg
+
+
+class ClientTryAttack(Packet):
+    def __init__(self, player_id):
+        self.player_id = player_id
+
+
+class ClientChangeSlot(Packet):
+    def __init__(self, slot):
+        self.slot = slot
+
+
 
 
 def test():
