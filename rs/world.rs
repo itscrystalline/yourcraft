@@ -143,6 +143,7 @@ struct TerrainSettings {
     noise_passes: usize,
     redistribution_factor: f64,
     cave_gen_size: f64,
+    ore_gen_size: f64,
     tree_spawn_radius: f64,
 }
 
@@ -219,6 +220,7 @@ impl World {
                 redistribution_factor,
                 water_height,
                 cave_gen_size,
+                ore_gen_size,
                 tree_spawn_radius,
             } => World::generate_terrain(
                 to_console,
@@ -231,6 +233,7 @@ impl World {
                     noise_passes,
                     redistribution_factor,
                     cave_gen_size,
+                    ore_gen_size,
                     tree_spawn_radius,
                 },
             )?,
@@ -330,6 +333,7 @@ impl World {
             return Err(WorldError::GenerationTooThin);
         }
         let cave_gen_size = terrain_settings.cave_gen_size.clamp(0.0, 1.0);
+        let ore_gen_size = terrain_settings.ore_gen_size.clamp(0.0, 1.0);
 
         let master_seed = terrain_settings.seed.unwrap_or(rand::rng().next_u64());
         let mut seed_generator = SmallRng::seed_from_u64(master_seed);
@@ -358,7 +362,7 @@ impl World {
             let seed = seed_generator.next_u32();
             move |x, y| {
                 let simplex = OpenSimplex::new(seed);
-                simplex.get([x * 0.008 * 64.0, y * 0.008 * 64.0]).abs()
+                simplex.get([x * 0.01 * 16.0, y * 0.01 * 16.0]) / 2.0 + 0.5
             }
         };
         let mut trees = Poisson::<1>::new()
@@ -422,10 +426,8 @@ impl World {
 
             for y in 0..=u32::max(height, terrain_settings.water_height) {
                 let noise_here = ore_generator(x as f64, y as f64);
-                if world.get_block(x, y)? == Block::Stone{
-                    if noise_here < cave_gen_size {
-                        world.set_block(x, y, Block::Leaves)?;
-                    }
+                if world.get_block(x, y)? == Block::Stone && noise_here < ore_gen_size {
+                    world.set_block(x, y, Block::Ore)?;
                 }
             }
         }
@@ -1196,5 +1198,5 @@ define_blocks! {
     Wood = 3 => { solid: true, item: Some(Item::Wood), hardness: 0 },
     Leaves = 4 => { solid: true, item: Some(Item::Leaves), hardness: 0},
     Water = 5 => { solid: false, item: Some(Item::WaterBucket), hardness: 0},
-    Ores = 6 => { solid: false, item: Some(Item::Ores), hardness: 1},
+    Ore = 6 => { solid: true, item: Some(Item::Ore), hardness: 1},
 }

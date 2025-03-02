@@ -439,5 +439,5 @@ define_items! {
     WoodPickaxe = (6, None),
     WoodAxe = (7, None),
     WoodSword = (8, None),
-    Ores = (9, Some(Block::Ores))
+    Ore = (9, Some(Block::Ore))
 }

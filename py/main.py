@@ -30,6 +30,8 @@ clock = pygame.time.Clock()
 font = pygame.font.SysFont("Arial", 20)
 message_font = pygame.font.SysFont("Arial", 60)
 
+player_name = "test"
+
 # Set up colors
 WHITE = (255, 255, 255)
 BLUE = (0, 0, 255)
@@ -73,14 +75,15 @@ def load_resource(name):
 
 
 BlockType = list(
-    map(load_resource, ["grassblock.png", "stoneblock.png", "woodblock.png", "leaves.png", "waterblock.png"]))
+    map(load_resource, ["grassblock.png", "stoneblock.png", "woodblock.png", "leaves.png", "waterblock.png", "ore.png"]))
 bg = load("background2.png").convert_alpha()
+items = list(map(load_resource, ["sword.png", "axe.png", "pickaxe.png"]))
 
 Non_Solid = [0, 5]
 
 # Set connection
 cliNet = network.ServerConnection("127.0.0.1")
-cliNet.send(network.ClientHello("test"))
+cliNet.send(network.ClientHello(player_name))
 
 # Synchronize network initialization
 INIT_DATA = cliNet.recv()['data']
@@ -378,11 +381,12 @@ def main():
             if need_update_pos:
                 print("sending velocity")
                 cliNet.send(network.ClientPlayerXVelocity(speed_update / pixel_scaling))
-        Worldwidth_percent = (position2D.x/pixel_scaling)/Worldwidth
-        movable_width = 7680-screen_width
-        X_value = Worldwidth_percent*movable_width
+
         # Draw background
-        screen.blit(bg, (-X_value,0))
+        Worldwidth_percent = (position2D.x / pixel_scaling) / Worldwidth
+        movable_width = 7680 - screen_width
+        X_value = Worldwidth_percent * movable_width
+        screen.blit(bg, (-X_value, 0))
 
         # Draw world (visible chunks)
         draw_world(chunkCoord)
@@ -395,7 +399,7 @@ def main():
             screen_width / 2 - pixel_scaling / 2, screen_height / 2 - pixel_scaling, pixel_scaling, 2 * pixel_scaling))
 
         # Draw player's name
-        name = font.render("test", 1, WHITE)
+        name = font.render(player_name, 1, WHITE)
         name_rect = name.get_rect()
 
         screen.blit(name, (
@@ -403,8 +407,8 @@ def main():
 
         if is_chatting:
             # Draw client chat
-            pygame.gfxdraw.box(screen, (0, screen_height * 4 / 5, screen_width, screen_height / 10), (0, 0, 0, 64))
-            screen.blit(message_font.render(client_message, 1, WHITE), (0, screen_height * 4 / 5))
+            pygame.gfxdraw.box(screen, (0, screen_height * 5 / 6, screen_width, screen_height / 15), (0, 0, 0, 64))
+            screen.blit(message_font.render(client_message, 1, WHITE), (0, screen_height * 5 / 6))
 
         # Debug FPS and Position
         screen.blit(font.render(f"{clock.get_fps():.2f} FPS", 1, WHITE), (0, 0))
