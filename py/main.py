@@ -287,6 +287,28 @@ def main():
                         client_message += event.unicode
                 elif event.key in currentPlayer.keys[6:15]:
                     cliNet.send(network.ClientChangeSlot(event.key-49))
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                mouse = pygame.mouse.get_pressed(3)
+                print(mouse)
+                mouse_left, _, mouse_right = mouse
+                if mouse_right:
+                    NormalX = int((position2D.x - screen_width / 2 + MousePos[0] + pixel_scaling / 2) // pixel_scaling)
+                    NormalY = int((position2D.y + screen_height / 2 - MousePos[1] + pixel_scaling) // pixel_scaling)
+                    # print(NormalX, NormalY)
+                    if NormalX >= 0 and NormalY >= 0:
+                        dScreenMouse = ((MousePos[0] - screen_width / 2) / pixel_scaling,
+                                        (MousePos[1] - screen_height / 2) / pixel_scaling)
+                        place_in_range(NormalX, NormalY, dScreenMouse)
+                elif mouse_left:
+                    NormalX = int((position2D.x - screen_width / 2 + MousePos[0] + pixel_scaling / 2) // pixel_scaling)
+                    NormalY = int((position2D.y + screen_height / 2 - MousePos[1] + pixel_scaling) // pixel_scaling)
+                    # print(NormalX, NormalY)
+                    if NormalX >= 0 and NormalY >= 0:
+                        dScreenMouse = ((MousePos[0] - screen_width / 2) / pixel_scaling,
+                                        (MousePos[1] - screen_height / 2) / pixel_scaling)
+                        break_in_range(NormalX, NormalY, dScreenMouse)
+
+
 
         # Update from server :)
         sync_data()
@@ -323,24 +345,6 @@ def main():
                     need_update_pos = True
                     speed_update = 0
                     prev_direction = 0
-
-            if keys[currentPlayer.keys[2]]:  # Place block
-                NormalX = int((position2D.x - screen_width / 2 + MousePos[0] + pixel_scaling / 2) // pixel_scaling)
-                NormalY = int((position2D.y + screen_height / 2 - MousePos[1] + pixel_scaling) // pixel_scaling)
-                # print(NormalX, NormalY)
-                if NormalX >= 0 and NormalY >= 0:
-                    dScreenMouse = ((MousePos[0] - screen_width / 2) / pixel_scaling,
-                                    (MousePos[1] - screen_height / 2) / pixel_scaling)
-                    place_in_range(NormalX, NormalY, dScreenMouse)
-
-            if keys[currentPlayer.keys[3]]:  # Remove block
-                NormalX = int((position2D.x - screen_width / 2 + MousePos[0] + pixel_scaling / 2) // pixel_scaling)
-                NormalY = int((position2D.y + screen_height / 2 - MousePos[1] + pixel_scaling) // pixel_scaling)
-                # print(NormalX, NormalY)
-                if NormalX >= 0 and NormalY >= 0:
-                    dScreenMouse = ((MousePos[0] - screen_width / 2) / pixel_scaling,
-                                    (MousePos[1] - screen_height / 2) / pixel_scaling)
-                    break_in_range(NormalX, NormalY, dScreenMouse)
 
             if keys[currentPlayer.keys[4]]:  # Jump
                 if not WasJump:
