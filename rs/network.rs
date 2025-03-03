@@ -185,6 +185,9 @@ pub enum PacketTypes {
     ServerUpdateInventory {
         inv: [Option<NetworkItemStack>; 9],
     },
+    ClientRequestCraft {
+        item: u8,
+    },
 }
 
 #[macro_export]
@@ -663,7 +666,7 @@ pub async fn process_client_packet(
                     Player::spawn_at(world, spawn),
                     "cannot spawn player: {}"
                 );
-                world.notify_player_moved(to_network, &world.players[idx].clone(), old_x, old_y)?;
+                world.notify_player_moved(to_network, world.players[idx].id, old_x, old_y)?;
             });
         }
         PacketTypes::ClientHeartbeat {} => {
@@ -737,6 +740,7 @@ pub async fn process_client_packet(
                 world.players[idx].server_player.selected_slot = slot;
             })
         }
+        PacketTypes::ClientRequestCraft { item } => {}
 
         _ => {
             c_error!(

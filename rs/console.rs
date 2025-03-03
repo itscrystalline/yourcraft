@@ -649,7 +649,7 @@ pub async fn process_command(
                         return Ok(false);
                     }
                 };
-                world.notify_player_moved(to_network, &world.players[idx].clone(), old_x, old_y)?;
+                world.notify_player_moved(to_network, world.players[idx].id, old_x, old_y)?;
             } else {
                 c_error!(to_console, "Player doesn't exist.")
             }
@@ -666,7 +666,7 @@ pub async fn process_command(
                 world.players[idx].server_player.y = y;
                 world.players[idx].server_player.velocity = Velocity::default();
                 world.players[idx].server_player.acceleration = Acceleration::default();
-                world.notify_player_moved(to_network, &world.players[idx].clone(), old_x, old_y)?;
+                world.notify_player_moved(to_network, world.players[idx].id, old_x, old_y)?;
 
                 c_info!(
                     to_console,

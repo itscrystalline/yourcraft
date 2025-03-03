@@ -962,10 +962,14 @@ impl World {
     pub fn notify_player_moved(
         &mut self,
         to_network: ToNetwork,
-        new_player: &ClientConnection,
+        new_player_id: u32,
         old_x: f32,
         old_y: f32,
     ) -> io::Result<()> {
+        let new_player = match self.players.iter().find(|conn| conn.id == new_player_id) {
+            Some(n) => n,
+            None => return Ok(()),
+        };
         let (old_chunk_x, old_chunk_y) = self
             .get_chunk_block_is_in(old_x.round() as u32, old_y.round() as u32)
             .unwrap_or((0, 0));
@@ -1091,13 +1095,17 @@ impl World {
             .collect();
 
         let mut new_players = vec![];
+        let mut updates = vec![];
         for (new_player, update_pos, (old_x, old_y)) in res {
             if update_pos {
-                self.notify_player_moved(to_network.clone(), &new_player, old_x, old_y)?;
+                updates.push((new_player.id, old_x, old_y));
             }
             new_players.push(new_player);
         }
         self.players = new_players;
+        updates.into_iter().for_each(|(id, old_x, old_y)| {
+            let _ = self.notify_player_moved(to_network.clone(), id, old_x, old_y);
+        });
         Ok(now.elapsed())
     }
 
