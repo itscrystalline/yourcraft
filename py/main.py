@@ -308,9 +308,6 @@ def main():
     global running, screen_size, screen_width, screen_height, WasJump, prev_direction, MousePos, is_chatting \
         , chat_key_pressing, client_message, playerSelectedSlot, pixel_scaling, lookLeft, scene_state
     while running:
-        if scene_state == 0:
-            screen.fill((0,0,0))
-            continue
         dt = clock.tick(50) / 1000  # Calculate time per frame
         MousePos = pygame.mouse.get_pos()
         for event in pygame.event.get():
