@@ -122,6 +122,10 @@ macro_rules! define_blocks {
             }
         }
 
+        pub fn hardness(block: Block) -> u8 {
+            block.properties().hardness
+        }
+
         pub fn is_solid(block: Block) -> bool {
             block.properties().solid
         }

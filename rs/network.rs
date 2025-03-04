@@ -1,6 +1,6 @@
 use crate::console::ToConsole;
 use crate::player::{Item, ItemStack, Player};
-use crate::world::{is_solid, Block, Chunk, World, WorldError};
+use crate::world::{hardness, is_solid, Block, Chunk, World, WorldError};
 use crate::{c_debug, c_error, c_info, c_warn, constants};
 use rand::prelude::*;
 use rayon::prelude::*;
@@ -527,7 +527,11 @@ pub async fn process_client_packet(
                             world.get_block(x, y),
                             "cannot get block: {}"
                         );
-                        if is_solid(block) {
+                        let can_break = world.players[idx]
+                            .server_player
+                            .get_current_breaking_power()
+                            > hardness(block);
+                        if is_solid(block) && can_break {
                             let item: Option<Item> = block.into();
                             if let Some(item) = item {
                                 let stack: ItemStack = item.into();
@@ -740,7 +744,9 @@ pub async fn process_client_packet(
                 world.players[idx].server_player.selected_slot = slot;
             })
         }
-        PacketTypes::ClientRequestCraft { item } => {}
+        PacketTypes::ClientRequestCraft { item } => {
+            unimplemented!()
+        }
 
         _ => {
             c_error!(

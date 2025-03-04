@@ -219,6 +219,13 @@ impl Player {
         self.inventory[self.selected_slot as usize]
     }
 
+    pub fn get_current_breaking_power(&self) -> u8 {
+        match self.get_current_itemstack() {
+            Some(ItemStack { item, .. }) => item.breaking_power(),
+            None => 0,
+        }
+    }
+
     pub fn get_current_damage(&self) -> f32 {
         match self.get_current_itemstack() {
             Some(ItemStack {
@@ -400,7 +407,7 @@ impl ItemStack {
 }
 
 macro_rules! define_items {
-    ($($name:ident = ($id:expr, $block_match:expr)),* $(,)?) => {
+    ($($name:ident = ($id:expr, $block_match:expr, $breaking_power: expr)),* $(,)?) => {
         #[derive(Debug, Clone, Copy, PartialEq)]
         pub enum Item {
             $($name = $id),*
@@ -411,6 +418,14 @@ macro_rules! define_items {
                 match id {
                     $($id => Item::$name),*,
                     _ => Item::Grass,
+                }
+            }
+        }
+
+        impl Item {
+            fn breaking_power(&self) -> u8 {
+                match self {
+                    $(Item::$name => $breaking_power),*,
                 }
             }
         }
@@ -430,14 +445,17 @@ macro_rules! define_items {
 }
 
 define_items! {
-    Grass = (0, Some(Block::Grass)),
-    Stone = (1, Some(Block::Stone)),
-    Wood = (2, Some(Block::Wood)),
-    Leaves = (3, Some(Block::Leaves)),
-    Bucket = (4, None),
-    WaterBucket = (5, Some(Block::Water)),
-    WoodPickaxe = (6, None),
-    WoodAxe = (7, None),
-    WoodSword = (8, None),
-    Ore = (9, Some(Block::Ore))
+    Grass = (0, Some(Block::Grass), 0),
+    Stone = (1, Some(Block::Stone), 0),
+    Wood = (2, Some(Block::Wood), 0),
+    Leaves = (3, Some(Block::Leaves), 0),
+    Bucket = (4, None, 0),
+    WaterBucket = (5, Some(Block::Water), 0),
+    WoodPickaxe = (6, None, 1),
+    WoodAxe = (7, None, 1),
+    WoodSword = (8, None, 0),
+    Ore = (9, Some(Block::Ore), 0),
+    OrePickaxe = (10, None, 2),
+    OreAxe = (11, None, 2),
+    OreSword = (12, None, 0)
 }
