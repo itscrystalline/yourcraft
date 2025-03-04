@@ -137,3 +137,8 @@ class ImageSprite(Component):
 @dataclasses.dataclass
 class Inventory(Component):
     items: dict[str, int] = dataclasses.field(default_factory=dict)
+
+
+@dataclasses.dataclass
+class SelectedSlot(Component):
+    slot: int = 0

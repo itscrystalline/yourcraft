@@ -21,7 +21,7 @@ screen = pygame.display.set_mode((screen_width, screen_height),
 pygame.display.set_caption("Pygame Initialization Example")
 
 # Set pixel scaling
-pixel_scaling = 20
+pixel_scaling = 25
 
 # Clock
 clock = pygame.time.Clock()
@@ -42,6 +42,8 @@ currentPlayer = classic_entity.Player()
 currentPlayer.keys = [pygame.K_a, pygame.K_d, pygame.K_e, pygame.K_q, pygame.K_SPACE, pygame.K_RETURN, pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5, pygame.K_6, pygame.K_7, pygame.K_8, pygame.K_9]
 position2D = currentPlayer.getComponent("transform2D").getVariable("position")
 speed = 5 * pixel_scaling
+playerInventory = currentPlayer.getComponent("inventory").getVariable("items")
+playerSelectedSlot = currentPlayer.getComponent("selectedSlot").getVariable("slot")
 
 # Other players
 otherPlayers = {}
@@ -70,7 +72,7 @@ def load(name):
 
 def load_resource(name):
     pic = load(name)
-    pic = pygame.transform.scale_by(pic, 2).convert_alpha()
+    pic = pygame.transform.scale_by(pic, pixel_scaling/10).convert_alpha()
     return pic
 
 
@@ -162,6 +164,7 @@ def NetworkThread():
                         UpdateChunk[(15 - int(x % 16),
                                      15 - int(y % 16))] = receiving['data']['block']
             elif receiving['t'] == network.UPDATE_INVENTORY:
+
                 print(receiving['data'])
 
 
@@ -323,7 +326,7 @@ def main():
         need_update_pos = False
         speed_update = 0
         if not is_chatting:
-            if keys[currentPlayer.keys[0]] and (get_block(position2D.x-1, position2D.y) in Non_Solid) and (get_block(position2D.x-1, position2D.y+20) in Non_Solid):  # Move left
+            if keys[currentPlayer.keys[0]] and (get_block(position2D.x-1, position2D.y) in Non_Solid) and (get_block(position2D.x-1, position2D.y+pixel_scaling) in Non_Solid):  # Move left
                 position2D.x -= speed * dt
                 WorldDelta.vx -= speed * dt
                 movement_update = True
@@ -331,7 +334,7 @@ def main():
                     need_update_pos = True
                     speed_update = -speed * dt
                     prev_direction = -1
-            elif keys[currentPlayer.keys[1]] and (get_block(position2D.x+1, position2D.y) in Non_Solid) and (get_block(position2D.x+1, position2D.y+20) in Non_Solid):  # Move right
+            elif keys[currentPlayer.keys[1]] and (get_block(position2D.x+1, position2D.y) in Non_Solid) and (get_block(position2D.x+1, position2D.y+pixel_scaling) in Non_Solid):  # Move right
                 position2D.x += speed * dt
                 WorldDelta.vx += speed * dt
                 movement_update = True
@@ -413,6 +416,10 @@ def main():
             # Draw client chat
             pygame.gfxdraw.box(screen, (0, screen_height * 5 / 6, screen_width, screen_height / 15), (0, 0, 0, 64))
             screen.blit(message_font.render(client_message, 1, WHITE), (0, screen_height * 5 / 6))
+
+        # Draw hotbar
+        pygame.gfxdraw.box(screen, (screen_width/3, screen_height * 5 / 6, screen_width/3, screen_height / 15), (0, 0, 0, 64))
+        pygame.draw.rect(screen, WHITE, (screen_width/3, screen_height * 5 / 6, screen_width/3, screen_height / 15), pixel_scaling//4)
 
         # Debug FPS and Position
         screen.blit(font.render(f"{clock.get_fps():.2f} FPS", 1, WHITE), (0, 0))
