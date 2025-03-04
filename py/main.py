@@ -39,11 +39,21 @@ BLUE = (0, 0, 255)
 # Entities
 currentPlayer = classic_entity.Player()
 # K_RETURN is [Enter]
-currentPlayer.keys = [pygame.K_a, pygame.K_d, pygame.K_e, pygame.K_q, pygame.K_SPACE, pygame.K_RETURN, pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5, pygame.K_6, pygame.K_7, pygame.K_8, pygame.K_9]
+currentPlayer.keys = [pygame.K_a, pygame.K_d, pygame.K_e, pygame.K_q, pygame.K_SPACE, pygame.K_RETURN, pygame.K_1,
+                      pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5, pygame.K_6, pygame.K_7, pygame.K_8, pygame.K_9]
 position2D = currentPlayer.getComponent("transform2D").getVariable("position")
 speed = 5 * pixel_scaling
 playerInventory = currentPlayer.getComponent("inventory").getVariable("items")
-playerSelectedSlot = currentPlayer.getComponent("selectedSlot").getVariable("slot")
+playerInventory[0] = {'item': -1, 'count': 0}
+playerInventory[1] = {'item': -1, 'count': 0}
+playerInventory[2] = {'item': -1, 'count': 0}
+playerInventory[3] = {'item': -1, 'count': 0}
+playerInventory[4] = {'item': -1, 'count': 0}
+playerInventory[5] = {'item': -1, 'count': 0}
+playerInventory[6] = {'item': -1, 'count': 0}
+playerInventory[7] = {'item': -1, 'count': 0}
+playerInventory[8] = {'item': -1, 'count': 0}
+playerSelectedSlot = currentPlayer.getComponent("selectedSlot")
 
 # Other players
 otherPlayers = {}
@@ -72,16 +82,30 @@ def load(name):
 
 def load_resource(name):
     pic = load(name)
-    pic = pygame.transform.scale_by(pic, pixel_scaling/10).convert_alpha()
+    pic = pygame.transform.scale_by(pic, pixel_scaling / 10).convert_alpha()
     return pic
 
 
 BlockType = list(
-    map(load_resource, ["grassblock.png", "stoneblock.png", "woodblock.png", "leaves.png", "waterblock.png", "ore.png"]))
-bg = load("background2.png").convert_alpha()
+    map(load_resource,
+        ["grassblock.png", "stoneblock.png", "woodblock.png", "leaves.png", "waterblock.png", "ore.png"]))
+bg = pygame.transform.scale_by(load("background2.png"), pixel_scaling / 15).convert_alpha()
 items = list(map(load_resource, ["sword.png", "axe.png", "pickaxe.png"]))
 
+
+# Run only change resolution
+def reload_resource():
+    global BlockType, bg, items
+    BlockType = list(
+        map(load_resource,
+            ["grassblock.png", "stoneblock.png", "woodblock.png", "leaves.png", "waterblock.png", "ore.png"]))
+    bg = pygame.transform.scale_by(load("background2.png"), pixel_scaling / 15).convert_alpha()
+    items = list(map(load_resource, ["sword.png", "axe.png", "pickaxe.png"]))
+
+
 Non_Solid = [0, 5]
+itemsByID = [BlockType[0], BlockType[1], BlockType[2], BlockType[3], bg, BlockType[4], items[2], items[1], items[0],
+             BlockType[5]]
 
 # Set connection
 cliNet = network.ServerConnection("127.0.0.1")
@@ -89,7 +113,6 @@ cliNet.send(network.ClientHello(player_name))
 
 # Synchronize network initialization
 INIT_DATA = cliNet.recv()['data']
-print(INIT_DATA)
 
 # Initialize Data
 currentPlayer.player_id = INIT_DATA['player_id']
@@ -160,12 +183,17 @@ def NetworkThread():
             elif receiving['t'] == network.BATCH_UPDATE_BLOCK:
                 for x, y in receiving['data']['batch']:
                     if (UpdateChunk := World.get((int(x // 16),
-                                              int(y // 16)))) is not None:
+                                                  int(y // 16)))) is not None:
                         UpdateChunk[(15 - int(x % 16),
                                      15 - int(y % 16))] = receiving['data']['block']
             elif receiving['t'] == network.UPDATE_INVENTORY:
-
-                print(receiving['data'])
+                e = -1
+                for item_in_slot in receiving['data']['inv']:
+                    e += 1
+                    if item_in_slot is None:
+                        playerInventory[e] = {'item': -1, 'count': 0}
+                        continue
+                    playerInventory[e] = item_in_slot
 
 
 # Draw world
@@ -251,7 +279,7 @@ def get_block(x, y) -> int:
 def place_in_range(x, y, d) -> bool:
     if (d[0] ** 2 + d[1] ** 2) <= 64 or (d[0] ** 2 + (d[1] - 1) ** 2) <= 64:
         # if (UpdateChunk := World.get((int(x // 16), int(y // 16)))) is not None:
-            # UpdateChunk[(15 - int(x % 16), 15 - int(y % 16))] = -2
+        # UpdateChunk[(15 - int(x % 16), 15 - int(y % 16))] = -2
         cliNet.send(network.ClientPlaceBlock(x, y))
         return True
     return False
@@ -267,7 +295,7 @@ def break_in_range(x, y, d) -> bool:
 
 # Game loop
 def main():
-    global running, screen_size, screen_width, screen_height, WasJump, prev_direction, MousePos, is_chatting, chat_key_pressing, client_message
+    global running, screen_size, screen_width, screen_height, WasJump, prev_direction, MousePos, is_chatting, chat_key_pressing, client_message, playerSelectedSlot
     while running:
         dt = clock.tick(50) / 1000  # Calculate time per frame
         MousePos = pygame.mouse.get_pos()
@@ -280,6 +308,7 @@ def main():
                 screen_size = screen.get_size()
                 screen_width = screen_size[0]
                 screen_height = screen_size[1]
+                reload_resource()
             elif event.type == pygame.KEYDOWN:
                 if is_chatting:
                     if event.key == pygame.K_BACKSPACE and client_message.__len__() > 0:
@@ -289,7 +318,8 @@ def main():
                     else:
                         client_message += event.unicode
                 elif event.key in currentPlayer.keys[6:15]:
-                    cliNet.send(network.ClientChangeSlot(event.key-49))
+                    cliNet.send(network.ClientChangeSlot(event.key - 49))
+                    playerSelectedSlot.slot = event.key - 49
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mouse = pygame.mouse.get_pressed(3)
                 print(mouse)
@@ -311,8 +341,6 @@ def main():
                                         (MousePos[1] - screen_height / 2) / pixel_scaling)
                         break_in_range(NormalX, NormalY, dScreenMouse)
 
-
-
         # Update from server :)
         sync_data()
 
@@ -326,7 +354,8 @@ def main():
         need_update_pos = False
         speed_update = 0
         if not is_chatting:
-            if keys[currentPlayer.keys[0]] and (get_block(position2D.x-1, position2D.y) in Non_Solid) and (get_block(position2D.x-1, position2D.y+pixel_scaling) in Non_Solid):  # Move left
+            if keys[currentPlayer.keys[0]] and (get_block(position2D.x - 1, position2D.y) in Non_Solid) and (
+                    get_block(position2D.x - 1, position2D.y + pixel_scaling) in Non_Solid):  # Move left
                 position2D.x -= speed * dt
                 WorldDelta.vx -= speed * dt
                 movement_update = True
@@ -334,7 +363,9 @@ def main():
                     need_update_pos = True
                     speed_update = -speed * dt
                     prev_direction = -1
-            elif keys[currentPlayer.keys[1]] and (get_block(position2D.x+1, position2D.y) in Non_Solid) and (get_block(position2D.x+1, position2D.y+pixel_scaling) in Non_Solid):  # Move right
+            elif keys[currentPlayer.keys[1]] and (
+                    get_block(position2D.x + pixel_scaling, position2D.y) in Non_Solid) and (
+                    get_block(position2D.x + pixel_scaling, position2D.y + 1) in Non_Solid):  # Move right
                 position2D.x += speed * dt
                 WorldDelta.vx += speed * dt
                 movement_update = True
@@ -418,9 +449,31 @@ def main():
             screen.blit(message_font.render(client_message, 1, WHITE), (0, screen_height * 5 / 6))
 
         # Draw hotbar
-        pygame.gfxdraw.box(screen, (screen_width/3, screen_height * 5 / 6, screen_width/3, screen_height / 15), (0, 0, 0, 64))
-        pygame.draw.rect(screen, WHITE, (screen_width/3, screen_height * 5 / 6, screen_width/3, screen_height / 15), pixel_scaling//4)
+        pygame.gfxdraw.box(screen, (screen_width / 3, screen_height * 5 / 6, screen_width / 3, screen_height / 15),
+                           (0, 0, 0, 64))
 
+        dSlot = screen_width / 27
+
+        pygame.draw.rect(screen, WHITE, (
+        screen_width / 3, screen_height * 5 / 6, screen_width / 3 + pixel_scaling // 4, screen_height / 15 + pixel_scaling // 4),
+                         pixel_scaling // 4)
+
+        # Draw items
+        for slot_index in range(0, 9):
+            if slot_index == playerSelectedSlot.slot:
+                pygame.draw.rect(screen, WHITE, (
+                screen_width / 3 + dSlot * slot_index - pixel_scaling // 8, screen_height * 5 / 6 - pixel_scaling // 8, dSlot + pixel_scaling // 2, screen_height / 15 + pixel_scaling // 2),
+                                 int(pixel_scaling // 4 * 1.5))
+            if playerInventory[slot_index]['item'] == -1:
+                continue
+            mul = slot_index * dSlot + dSlot / 2
+            mul += screen_width / 3
+            screen.blit(itemsByID[playerInventory[slot_index]['item']],
+                        (mul, screen_height * 5 / 6 + screen_height / 15 / 3))
+            item_count_font = font.render(playerInventory[slot_index]['count'].__str__(), 1, WHITE)
+            item_count_font_rect = item_count_font.get_rect(
+                midright=(mul + pixel_scaling, screen_height * 5 / 6 + screen_height / 15 / 1.414))
+            screen.blit(item_count_font, item_count_font_rect)
         # Debug FPS and Position
         screen.blit(font.render(f"{clock.get_fps():.2f} FPS", 1, WHITE), (0, 0))
         screen.blit(font.render(f"{position2D}", 1, WHITE), (400, 0))
