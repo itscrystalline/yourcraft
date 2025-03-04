@@ -278,6 +278,6 @@ perf*
 server.bat
 client.bat
 
-.idea/
+.idea/*
 
 disasm.txt
