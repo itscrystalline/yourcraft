@@ -111,6 +111,11 @@ Non_Solid = [0, 5]
 itemsByID = [BlockType[0], BlockType[1], BlockType[2], BlockType[3], bg, BlockType[4], items[2], items[1], items[0],
              BlockType[5]]
 
+player_sprite_ratio = 1/9
+player_sprite = pygame.transform.smoothscale_by(load("player_spritesheet.png"), player_sprite_ratio).convert_alpha()
+player_sprite_state = 0
+player_sprite_rect = player_sprite.get_rect()
+
 # Set connection
 cliNet = ""
 
@@ -239,10 +244,11 @@ def draw_world(chunkCoord):
 # Draw other players
 def draw_other_players():
     for eachPlayer in otherPlayers.values():
-        pygame.draw.rect(screen, WHITE, (
+        screen.blit(pygame.transform.flip(player_sprite, lookLeft, 0), (
             eachPlayer['pos_x'] * pixel_scaling - position2D.x + screen_width / 2 - pixel_scaling / 2,
             position2D.y - eachPlayer['pos_y'] * pixel_scaling + screen_height / 2 - pixel_scaling, pixel_scaling,
-            2 * pixel_scaling))
+            2 * pixel_scaling), (
+                    player_sprite_rect.w * 3 / 4 if lookLeft else 0, 0, player_sprite_rect.w / 4, player_sprite_rect.h))
 
 
 # Sync Server
@@ -299,7 +305,7 @@ netThread = ""
 def main():
     global running, screen_size, screen_width, screen_height, WasJump, prev_direction, MousePos, is_chatting \
         , chat_key_pressing, client_message, playerSelectedSlot, pixel_scaling, lookLeft, scene_state, player_name \
-        , editing, ip, cliNet, network_lock, netThread
+        , editing, ip, cliNet, network_lock, netThread, player_sprite_state
     while running:
         if scene_state == 0:
             screen.fill((0, 0, 0))
@@ -361,6 +367,7 @@ def main():
 
 
         dt = clock.tick(50) / 1000  # Calculate time per frame
+        player_sprite_state = (player_sprite_state+1)%24
         MousePos = pygame.mouse.get_pos()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -498,8 +505,17 @@ def main():
         draw_other_players()
 
         # Draw player
-        pygame.draw.rect(screen, WHITE, (
-            screen_width / 2 - pixel_scaling / 2, screen_height / 2 - pixel_scaling, pixel_scaling, 2 * pixel_scaling))
+        if prev_direction == 0:
+            screen.blit(pygame.transform.flip(player_sprite, lookLeft, 0), (
+                screen_width / 2 - pixel_scaling / 2 - 15, screen_height / 2 - pixel_scaling - 2, pixel_scaling,
+                2 * pixel_scaling), (player_sprite_rect.w*3/4 if lookLeft else 0, 0, player_sprite_rect.w/4, player_sprite_rect.h))
+        else:
+            screen.blit(pygame.transform.flip(player_sprite, lookLeft, 0), (
+                screen_width / 2 - pixel_scaling / 2 - 15, screen_height / 2 - pixel_scaling - 2, pixel_scaling,
+                2 * pixel_scaling),(player_sprite_rect.w/4*(3-player_sprite_state//6 if lookLeft else player_sprite_state//6), 0, player_sprite_rect.w/4, player_sprite_rect.h))
+
+        # pygame.draw.rect(screen, WHITE, (
+        #     screen_width / 2 - pixel_scaling / 2, screen_height / 2 - pixel_scaling, pixel_scaling, 2 * pixel_scaling))
 
         # Draw player's name
         name = font.render(player_name, 1, WHITE)
