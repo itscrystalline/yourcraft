@@ -34,7 +34,7 @@ message_font = pygame.font.SysFont("Arial", 60)
 
 scene_state = 0
 
-player_name = "player"
+player_name = ""
 
 # Set up colors
 WHITE = (255, 255, 255)
@@ -66,7 +66,7 @@ otherPlayers = {}
 messages = []
 client_message = ""
 MAX_MESSAGES = 50
-is_chatting = False
+is_chatting = True
 chat_key_pressing = False
 
 # World
@@ -112,24 +112,13 @@ itemsByID = [BlockType[0], BlockType[1], BlockType[2], BlockType[3], bg, BlockTy
              BlockType[5]]
 
 # Set connection
-cliNet = network.ServerConnection("127.0.0.1")
-cliNet.send(network.ClientHello(player_name))
+cliNet = ""
 
-# Synchronize network initialization
-INIT_DATA = cliNet.recv()['data']
-
-# Initialize Data
-currentPlayer.player_id = INIT_DATA['player_id']
-position2D.x = INIT_DATA['spawn_x'] * pixel_scaling
-position2D.y = INIT_DATA['spawn_y'] * pixel_scaling
-WorldPosition.x = -INIT_DATA['spawn_x'] * pixel_scaling
-WorldPosition.y = -INIT_DATA['spawn_y'] * pixel_scaling
-Worldwidth = INIT_DATA['world_width']
 WasJump = False
 prev_direction = 0
 
 # Network thread with proper handling of shared resources
-network_lock = threading.Lock()
+network_lock = ""
 
 ReadyToUpdate = {}
 
@@ -302,12 +291,75 @@ def break_in_range(x, y, d) -> bool:
         return True
     return False
 
+ip = ""
+editing = False
+netThread = ""
 
 # Game loop
 def main():
     global running, screen_size, screen_width, screen_height, WasJump, prev_direction, MousePos, is_chatting \
-        , chat_key_pressing, client_message, playerSelectedSlot, pixel_scaling, lookLeft, scene_state
+        , chat_key_pressing, client_message, playerSelectedSlot, pixel_scaling, lookLeft, scene_state, player_name \
+        , editing, ip, cliNet, network_lock, netThread
     while running:
+        if scene_state == 0:
+            screen.fill((0, 0, 0))
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    running = False
+                elif event.type == pygame.VIDEORESIZE:
+                    screen_size = screen.get_size()
+                    screen_width = screen_size[0]
+                    screen_height = screen_size[1]
+                    reload_resource()
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_BACKSPACE:
+                        match editing:
+                            case False:
+                                if player_name.__len__() > 0:
+                                    player_name = player_name[:-1]
+                            case True:
+                                if ip.__len__() > 0:
+                                    ip = ip[:-1]
+                            case _:
+                                print("Unknown editing state")
+                    elif event.key == pygame.K_RETURN:
+                        scene_state = 1
+                        cliNet = network.ServerConnection(ip)
+                        cliNet.send(network.ClientHello(player_name))
+
+                        # Synchronize network initialization
+                        INIT_DATA = cliNet.recv()['data']
+
+                        # Initialize Data
+                        currentPlayer.player_id = INIT_DATA['player_id']
+                        position2D.x = INIT_DATA['spawn_x'] * pixel_scaling
+                        position2D.y = INIT_DATA['spawn_y'] * pixel_scaling
+                        WorldPosition.x = -INIT_DATA['spawn_x'] * pixel_scaling
+                        WorldPosition.y = -INIT_DATA['spawn_y'] * pixel_scaling
+                        Worldwidth = INIT_DATA['world_width']
+                        network_lock = threading.Lock()
+                        netThread = threading.Thread(target=NetworkThread, daemon=True)
+                        netThread.start()
+
+                    elif event.key == pygame.K_UP or event.key == pygame.K_DOWN:
+                        editing = not editing
+                    elif event.key != pygame.K_BACKSPACE:
+                        match editing:
+                            case False:
+                                player_name += event.unicode
+                            case True:
+                                if ip.__len__() < 15:
+                                    ip += event.unicode
+                            case _:
+                                print("Unknown editing state")
+            screen.blit(message_font.render("Player Name: "+player_name, True, WHITE), (screen_width/6, screen_height/3-pixel_scaling))
+            screen.blit(message_font.render("IP: " + ip, True, WHITE),
+                        (screen_width / 6, 2 * screen_height / 3 - pixel_scaling))
+            pygame.display.update()
+            continue
+
+
         dt = clock.tick(50) / 1000  # Calculate time per frame
         MousePos = pygame.mouse.get_pos()
         for event in pygame.event.get():
@@ -326,7 +378,7 @@ def main():
                         client_message = client_message[:-1]
                     elif event.key == pygame.K_RETURN:
                         continue
-                    else:
+                    elif event.key != pygame.K_BACKSPACE:
                         client_message += event.unicode
                 elif event.key in currentPlayer.keys[6:15]:
                     cliNet.send(network.ClientChangeSlot(event.key - 49))
@@ -516,8 +568,6 @@ def main():
 
 # Quit Pygame
 if __name__ == '__main__':
-    netThread = threading.Thread(target=NetworkThread, daemon=True)
-    netThread.start()
     main()
 
 pygame.quit()
