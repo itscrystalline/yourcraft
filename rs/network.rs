@@ -530,7 +530,7 @@ pub async fn process_client_packet(
                         let can_break = world.players[idx]
                             .server_player
                             .get_current_breaking_power()
-                            > hardness(block);
+                            >= hardness(block);
                         if is_solid(block) && can_break {
                             let item: Option<Item> = block.into();
                             if let Some(item) = item {

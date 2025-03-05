@@ -446,15 +446,15 @@ macro_rules! define_items {
 
 define_items! {
     Grass = (0, Some(Block::Grass), 0),
-    Stone = (1, Some(Block::Stone), 0),
-    Wood = (2, Some(Block::Wood), 0),
+    Stone = (1, Some(Block::Stone), 1),
+    Wood = (2, Some(Block::Wood), 1),
     Leaves = (3, Some(Block::Leaves), 0),
-    Bucket = (4, None, 0),
-    WaterBucket = (5, Some(Block::Water), 0),
+    Bucket = (4, None, 1),
+    WaterBucket = (5, Some(Block::Water), 1),
     WoodPickaxe = (6, None, 1),
     WoodAxe = (7, None, 1),
     WoodSword = (8, None, 0),
-    Ore = (9, Some(Block::Ore), 0),
+    Ore = (9, Some(Block::Ore), 1),
     OrePickaxe = (10, None, 2),
     OreAxe = (11, None, 2),
     OreSword = (12, None, 0)
