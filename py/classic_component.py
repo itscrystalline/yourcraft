@@ -1,7 +1,7 @@
 # Import needs
-from entities import Component
 import dataclasses
-from typing import Union, Any
+from typing import Union
+from entities import Component
 
 
 @dataclasses.dataclass
@@ -129,14 +129,8 @@ class Cooldown(Component):
 
 
 @dataclasses.dataclass
-class ImageSprite(Component):
-    image_path: str = None
-    layer: int = 0
-
-
-@dataclasses.dataclass
 class Inventory(Component):
-    items: dict[str, int] = dataclasses.field(default_factory=dict)
+    items: dict[int, dict] = dataclasses.field(default_factory=dict)
 
 
 @dataclasses.dataclass

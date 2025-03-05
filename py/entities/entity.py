@@ -6,11 +6,13 @@ import uuid
 import copy
 from typing import TypeVar
 from component import Component
+import abc
 
 T = TypeVar('T', bound=Component)
 
+
 @dataclasses.dataclass
-class Entity:
+class Entity(abc.ABC):
     __entity_id: str = dataclasses.field(init=False)
     __components: dict[str, Component] = dataclasses.field(default_factory=dict)
 
@@ -34,19 +36,13 @@ class Entity:
         if key not in self.__components:
             self.addComponent(key, component)
 
-    def tryGetComponent(self, key: str) -> Component:
+    def tryGetComponent(self, key: str) -> Component | None:
+        if key not in self.__components:
+            return None
         return self.__components[key]
 
     def setComponent(self, key: str, component: Component) -> None:
         self.getComponent(key).setVariable(component.getVariable())
-
-    # Don't use this if possible
-    def followComponent(self, key: str, component: Component) -> None:
-        self.addComponent(key, component)
-
-    # Don't use this if possible
-    def unfollowComponent(self, key: str) -> None:
-        self.addComponent(key, copy.deepcopy(self.getComponent(key)))
 
     def __eq__(self, other: "Entity") -> bool:
         return self.__entity_id == other.__entity_id

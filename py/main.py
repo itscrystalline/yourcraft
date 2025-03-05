@@ -1,13 +1,15 @@
 import math
+import os
 import sys
+import threading
+import time
+
 import pygame
 import pygame.gfxdraw
+
 import classic_component
 import classic_entity
 import network
-import time
-import threading
-import os
 
 # Initialize Pygame
 pygame.init()
@@ -30,7 +32,9 @@ clock = pygame.time.Clock()
 font = pygame.font.SysFont("Arial", 20)
 message_font = pygame.font.SysFont("Arial", 60)
 
-player_name = "test"
+scene_state = 0
+
+player_name = ""
 
 # Set up colors
 WHITE = (255, 255, 255)
@@ -39,12 +43,22 @@ BLUE = (0, 0, 255)
 # Entities
 currentPlayer = classic_entity.Player()
 # K_RETURN is [Enter]
-currentPlayer.keys = [pygame.K_a, pygame.K_d, pygame.K_e, pygame.K_q, pygame.K_SPACE, pygame.K_RETURN, pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5, pygame.K_6, pygame.K_7, pygame.K_8, pygame.K_9]
+currentPlayer.keys = [pygame.K_a, pygame.K_d, pygame.K_e, pygame.K_q, pygame.K_SPACE, pygame.K_RETURN, pygame.K_1,
+                      pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5, pygame.K_6, pygame.K_7, pygame.K_8, pygame.K_9]
 position2D = currentPlayer.getComponent("transform2D").getVariable("position")
 speed = 5 * pixel_scaling
 playerInventory = currentPlayer.getComponent("inventory").getVariable("items")
-playerSelectedSlot = currentPlayer.getComponent("selectedSlot").getVariable("slot")
-
+playerInventory[0] = {'item': -1, 'count': 0}
+playerInventory[1] = {'item': -1, 'count': 0}
+playerInventory[2] = {'item': -1, 'count': 0}
+playerInventory[3] = {'item': -1, 'count': 0}
+playerInventory[4] = {'item': -1, 'count': 0}
+playerInventory[5] = {'item': -1, 'count': 0}
+playerInventory[6] = {'item': -1, 'count': 0}
+playerInventory[7] = {'item': -1, 'count': 0}
+playerInventory[8] = {'item': -1, 'count': 0}
+playerSelectedSlot = currentPlayer.getComponent("selectedSlot")
+lookLeft = True
 # Other players
 otherPlayers = {}
 
@@ -52,7 +66,7 @@ otherPlayers = {}
 messages = []
 client_message = ""
 MAX_MESSAGES = 50
-is_chatting = False
+is_chatting = True
 chat_key_pressing = False
 
 # World
@@ -72,37 +86,44 @@ def load(name):
 
 def load_resource(name):
     pic = load(name)
-    pic = pygame.transform.scale_by(pic, pixel_scaling/10).convert_alpha()
+    pic = pygame.transform.scale_by(pic, pixel_scaling / 10).convert_alpha()
     return pic
 
 
 BlockType = list(
-    map(load_resource, ["grassblock.png", "stoneblock.png", "woodblock.png", "leaves.png", "waterblock.png", "ore.png"]))
-bg = load("background2.png").convert_alpha()
+    map(load_resource,
+        ["grassblock.png", "stoneblock.png", "woodblock.png", "leaves.png", "waterblock.png", "ore.png"]))
+bg = pygame.transform.scale_by(load("background2.png"), pixel_scaling / 15).convert_alpha()
 items = list(map(load_resource, ["sword.png", "axe.png", "pickaxe.png"]))
 
+
+# Run only change resolution
+def reload_resource():
+    global BlockType, bg, items
+    BlockType = list(
+        map(load_resource,
+            ["grassblock.png", "stoneblock.png", "woodblock.png", "leaves.png", "waterblock.png", "ore.png"]))
+    bg = pygame.transform.scale_by(load("background2.png"), pixel_scaling / 15).convert_alpha()
+    items = list(map(load_resource, ["sword.png", "axe.png", "pickaxe.png"]))
+
+
 Non_Solid = [0, 5]
+itemsByID = [BlockType[0], BlockType[1], BlockType[2], BlockType[3], bg, BlockType[4], items[2], items[1], items[0],
+             BlockType[5]]
+
+player_sprite_ratio = 1/9
+player_sprite = pygame.transform.smoothscale_by(load("player_spritesheet.png"), player_sprite_ratio).convert_alpha()
+player_sprite_state = 0
+player_sprite_rect = player_sprite.get_rect()
 
 # Set connection
-cliNet = network.ServerConnection("127.0.0.1")
-cliNet.send(network.ClientHello(player_name))
+cliNet = ""
 
-# Synchronize network initialization
-INIT_DATA = cliNet.recv()['data']
-print(INIT_DATA)
-
-# Initialize Data
-currentPlayer.player_id = INIT_DATA['player_id']
-position2D.x = INIT_DATA['spawn_x'] * pixel_scaling
-position2D.y = INIT_DATA['spawn_y'] * pixel_scaling
-WorldPosition.x = -INIT_DATA['spawn_x'] * pixel_scaling
-WorldPosition.y = -INIT_DATA['spawn_y'] * pixel_scaling
-Worldwidth = INIT_DATA['world_width']
 WasJump = False
 prev_direction = 0
 
 # Network thread with proper handling of shared resources
-network_lock = threading.Lock()
+network_lock = ""
 
 ReadyToUpdate = {}
 
@@ -160,12 +181,23 @@ def NetworkThread():
             elif receiving['t'] == network.BATCH_UPDATE_BLOCK:
                 for x, y in receiving['data']['batch']:
                     if (UpdateChunk := World.get((int(x // 16),
-                                              int(y // 16)))) is not None:
+                                                  int(y // 16)))) is not None:
                         UpdateChunk[(15 - int(x % 16),
                                      15 - int(y % 16))] = receiving['data']['block']
             elif receiving['t'] == network.UPDATE_INVENTORY:
-
+                e = -1
+                for item_in_slot in receiving['data']['inv']:
+                    e += 1
+                    if item_in_slot is None:
+                        playerInventory[e] = {'item': -1, 'count': 0}
+                        continue
+                    playerInventory[e] = item_in_slot
+            elif receiving['t'] == network.SERVER_MESSAGE:
                 print(receiving['data'])
+                if messages.__len__() == MAX_MESSAGES:
+                    messages.pop(0)
+
+                messages.append("[" + receiving['data']['player_name'] + "] " + receiving['data']['msg'])
 
 
 # Draw world
@@ -212,10 +244,11 @@ def draw_world(chunkCoord):
 # Draw other players
 def draw_other_players():
     for eachPlayer in otherPlayers.values():
-        pygame.draw.rect(screen, WHITE, (
+        screen.blit(pygame.transform.flip(player_sprite, lookLeft, 0), (
             eachPlayer['pos_x'] * pixel_scaling - position2D.x + screen_width / 2 - pixel_scaling / 2,
             position2D.y - eachPlayer['pos_y'] * pixel_scaling + screen_height / 2 - pixel_scaling, pixel_scaling,
-            2 * pixel_scaling))
+            2 * pixel_scaling), (
+                    player_sprite_rect.w * 3 / 4 if lookLeft else 0, 0, player_sprite_rect.w / 4, player_sprite_rect.h))
 
 
 # Sync Server
@@ -251,7 +284,7 @@ def get_block(x, y) -> int:
 def place_in_range(x, y, d) -> bool:
     if (d[0] ** 2 + d[1] ** 2) <= 64 or (d[0] ** 2 + (d[1] - 1) ** 2) <= 64:
         # if (UpdateChunk := World.get((int(x // 16), int(y // 16)))) is not None:
-            # UpdateChunk[(15 - int(x % 16), 15 - int(y % 16))] = -2
+        # UpdateChunk[(15 - int(x % 16), 15 - int(y % 16))] = -2
         cliNet.send(network.ClientPlaceBlock(x, y))
         return True
     return False
@@ -264,12 +297,77 @@ def break_in_range(x, y, d) -> bool:
         return True
     return False
 
+ip = ""
+editing = False
+netThread = ""
 
 # Game loop
 def main():
-    global running, screen_size, screen_width, screen_height, WasJump, prev_direction, MousePos, is_chatting, chat_key_pressing, client_message
+    global running, screen_size, screen_width, screen_height, WasJump, prev_direction, MousePos, is_chatting \
+        , chat_key_pressing, client_message, playerSelectedSlot, pixel_scaling, lookLeft, scene_state, player_name \
+        , editing, ip, cliNet, network_lock, netThread, player_sprite_state
     while running:
+        if scene_state == 0:
+            screen.fill((0, 0, 0))
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    running = False
+                elif event.type == pygame.VIDEORESIZE:
+                    screen_size = screen.get_size()
+                    screen_width = screen_size[0]
+                    screen_height = screen_size[1]
+                    reload_resource()
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_BACKSPACE:
+                        match editing:
+                            case False:
+                                if player_name.__len__() > 0:
+                                    player_name = player_name[:-1]
+                            case True:
+                                if ip.__len__() > 0:
+                                    ip = ip[:-1]
+                            case _:
+                                print("Unknown editing state")
+                    elif event.key == pygame.K_RETURN:
+                        scene_state = 1
+                        cliNet = network.ServerConnection(ip)
+                        cliNet.send(network.ClientHello(player_name))
+
+                        # Synchronize network initialization
+                        INIT_DATA = cliNet.recv()['data']
+
+                        # Initialize Data
+                        currentPlayer.player_id = INIT_DATA['player_id']
+                        position2D.x = INIT_DATA['spawn_x'] * pixel_scaling
+                        position2D.y = INIT_DATA['spawn_y'] * pixel_scaling
+                        WorldPosition.x = -INIT_DATA['spawn_x'] * pixel_scaling
+                        WorldPosition.y = -INIT_DATA['spawn_y'] * pixel_scaling
+                        Worldwidth = INIT_DATA['world_width']
+                        network_lock = threading.Lock()
+                        netThread = threading.Thread(target=NetworkThread, daemon=True)
+                        netThread.start()
+
+                    elif event.key == pygame.K_UP or event.key == pygame.K_DOWN:
+                        editing = not editing
+                    elif event.key != pygame.K_BACKSPACE:
+                        match editing:
+                            case False:
+                                player_name += event.unicode
+                            case True:
+                                if ip.__len__() < 15:
+                                    ip += event.unicode
+                            case _:
+                                print("Unknown editing state")
+            screen.blit(message_font.render("Player Name: "+player_name, True, WHITE), (screen_width/6, screen_height/3-pixel_scaling))
+            screen.blit(message_font.render("IP: " + ip, True, WHITE),
+                        (screen_width / 6, 2 * screen_height / 3 - pixel_scaling))
+            pygame.display.update()
+            continue
+
+
         dt = clock.tick(50) / 1000  # Calculate time per frame
+        player_sprite_state = (player_sprite_state+1)%24
         MousePos = pygame.mouse.get_pos()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -280,16 +378,18 @@ def main():
                 screen_size = screen.get_size()
                 screen_width = screen_size[0]
                 screen_height = screen_size[1]
+                reload_resource()
             elif event.type == pygame.KEYDOWN:
                 if is_chatting:
                     if event.key == pygame.K_BACKSPACE and client_message.__len__() > 0:
                         client_message = client_message[:-1]
                     elif event.key == pygame.K_RETURN:
                         continue
-                    else:
+                    elif event.key != pygame.K_BACKSPACE:
                         client_message += event.unicode
                 elif event.key in currentPlayer.keys[6:15]:
-                    cliNet.send(network.ClientChangeSlot(event.key-49))
+                    cliNet.send(network.ClientChangeSlot(event.key - 49))
+                    playerSelectedSlot.slot = event.key - 49
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mouse = pygame.mouse.get_pressed(3)
                 print(mouse)
@@ -311,8 +411,6 @@ def main():
                                         (MousePos[1] - screen_height / 2) / pixel_scaling)
                         break_in_range(NormalX, NormalY, dScreenMouse)
 
-
-
         # Update from server :)
         sync_data()
 
@@ -326,7 +424,8 @@ def main():
         need_update_pos = False
         speed_update = 0
         if not is_chatting:
-            if keys[currentPlayer.keys[0]] and (get_block(position2D.x-1, position2D.y) in Non_Solid) and (get_block(position2D.x-1, position2D.y+pixel_scaling) in Non_Solid):  # Move left
+            if keys[currentPlayer.keys[0]] and (get_block(position2D.x - 1, position2D.y) in Non_Solid) and (
+                    get_block(position2D.x - 1, position2D.y + pixel_scaling) in Non_Solid):  # Move left
                 position2D.x -= speed * dt
                 WorldDelta.vx -= speed * dt
                 movement_update = True
@@ -334,7 +433,10 @@ def main():
                     need_update_pos = True
                     speed_update = -speed * dt
                     prev_direction = -1
-            elif keys[currentPlayer.keys[1]] and (get_block(position2D.x+1, position2D.y) in Non_Solid) and (get_block(position2D.x+1, position2D.y+pixel_scaling) in Non_Solid):  # Move right
+                lookLeft = True
+            elif keys[currentPlayer.keys[1]] and (
+                    get_block(position2D.x + pixel_scaling, position2D.y) in Non_Solid) and (
+                    get_block(position2D.x + pixel_scaling, position2D.y + 1) in Non_Solid):  # Move right
                 position2D.x += speed * dt
                 WorldDelta.vx += speed * dt
                 movement_update = True
@@ -342,6 +444,7 @@ def main():
                     need_update_pos = True
                     speed_update = speed * dt
                     prev_direction = 1
+                lookLeft = False
             else:
                 if prev_direction != 0:
                     movement_update = True
@@ -402,8 +505,17 @@ def main():
         draw_other_players()
 
         # Draw player
-        pygame.draw.rect(screen, WHITE, (
-            screen_width / 2 - pixel_scaling / 2, screen_height / 2 - pixel_scaling, pixel_scaling, 2 * pixel_scaling))
+        if prev_direction == 0:
+            screen.blit(pygame.transform.flip(player_sprite, lookLeft, 0), (
+                screen_width / 2 - pixel_scaling / 2 - 15, screen_height / 2 - pixel_scaling - 2, pixel_scaling,
+                2 * pixel_scaling), (player_sprite_rect.w*3/4 if lookLeft else 0, 0, player_sprite_rect.w/4, player_sprite_rect.h))
+        else:
+            screen.blit(pygame.transform.flip(player_sprite, lookLeft, 0), (
+                screen_width / 2 - pixel_scaling / 2 - 15, screen_height / 2 - pixel_scaling - 2, pixel_scaling,
+                2 * pixel_scaling),(player_sprite_rect.w/4*(3-player_sprite_state//6 if lookLeft else player_sprite_state//6), 0, player_sprite_rect.w/4, player_sprite_rect.h))
+
+        # pygame.draw.rect(screen, WHITE, (
+        #     screen_width / 2 - pixel_scaling / 2, screen_height / 2 - pixel_scaling, pixel_scaling, 2 * pixel_scaling))
 
         # Draw player's name
         name = font.render(player_name, 1, WHITE)
@@ -414,13 +526,54 @@ def main():
 
         if is_chatting:
             # Draw client chat
-            pygame.gfxdraw.box(screen, (0, screen_height * 5 / 6, screen_width, screen_height / 15), (0, 0, 0, 64))
-            screen.blit(message_font.render(client_message, 1, WHITE), (0, screen_height * 5 / 6))
+            pygame.gfxdraw.box(screen, (0, screen_height * 5 / 6 - screen_height / 10, screen_width, screen_height / 15),
+                               (0, 0, 0, 64))
+            screen.blit(message_font.render(client_message, 1, WHITE), (0, screen_height * 5 / 6 - screen_height / 10))
+            if (msg_len := messages.__len__()) > 0:
+                pygame.gfxdraw.box(screen,
+                                   (0, screen_height * 5 / 6 - screen_height / 10 * (msg_len + 1), screen_width,
+                                    screen_height / 10 * msg_len),
+                                   (0, 0, 0, 64))
+            e = 1
+            for draw_message in messages[::-1]:
+                e += 1
+                screen.blit(message_font.render(draw_message, 1, WHITE),
+                            (0, screen_height * 5 / 6 - screen_height / 10 * e))
 
         # Draw hotbar
-        pygame.gfxdraw.box(screen, (screen_width/3, screen_height * 5 / 6, screen_width/3, screen_height / 15), (0, 0, 0, 64))
-        pygame.draw.rect(screen, WHITE, (screen_width/3, screen_height * 5 / 6, screen_width/3, screen_height / 15), pixel_scaling//4)
+        pygame.gfxdraw.box(screen, (screen_width / 3, screen_height * 5 / 6, screen_width / 3, screen_height / 15),
+                           (0, 0, 0, 64))
 
+        dSlot = screen_width / 27
+
+        pygame.draw.rect(screen, WHITE, (
+            screen_width / 3, screen_height * 5 / 6, screen_width / 3 + pixel_scaling // 4,
+            screen_height / 15 + pixel_scaling // 4),
+                         pixel_scaling // 4)
+
+        # Draw items
+        for slot_index in range(0, 9):
+            if slot_index == playerSelectedSlot.slot:
+                pygame.draw.rect(screen, WHITE, (
+                    screen_width / 3 + dSlot * slot_index - pixel_scaling // 8,
+                    screen_height * 5 / 6 - pixel_scaling // 8, dSlot + pixel_scaling // 2,
+                    screen_height / 15 + pixel_scaling // 2),
+                                 int(pixel_scaling // 4 * 1.5))
+                if playerInventory[slot_index]['item'] == -1:
+                    continue
+                screen.blit(itemsByID[playerInventory[slot_index]['item']], (
+                screen_width / 2 + (-pixel_scaling * 1.2 if lookLeft else pixel_scaling * 0.2),
+                screen_height / 2 - pixel_scaling * 0.4))
+            if playerInventory[slot_index]['item'] == -1:
+                continue
+            mul = slot_index * dSlot + dSlot / 3
+            mul += screen_width / 3
+            screen.blit(itemsByID[playerInventory[slot_index]['item']],
+                        (mul, screen_height * 5 / 6 + screen_height / 15 / 3))
+            item_count_font = font.render(playerInventory[slot_index]['count'].__str__(), 1, WHITE)
+            item_count_font_rect = item_count_font.get_rect(
+                midright=(mul + pixel_scaling, screen_height * 5 / 6 + screen_height / 15 / 1.414))
+            screen.blit(item_count_font, item_count_font_rect)
         # Debug FPS and Position
         screen.blit(font.render(f"{clock.get_fps():.2f} FPS", 1, WHITE), (0, 0))
         screen.blit(font.render(f"{position2D}", 1, WHITE), (400, 0))
@@ -431,8 +584,6 @@ def main():
 
 # Quit Pygame
 if __name__ == '__main__':
-    netThread = threading.Thread(target=NetworkThread, daemon=True)
-    netThread.start()
     main()
 
 pygame.quit()

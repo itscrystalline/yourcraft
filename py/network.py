@@ -115,29 +115,29 @@ class ClientChangeSlot(Packet):
 
 
 
-def test():
-    conn = ServerConnection("127.0.0.1")
-
-    conn.send(ClientHello("test"))
-    INIT_DATA = conn.recv()
-
-    print(INIT_DATA)
-
-    conn.send(ClientRequestChunk(0, 0))
-    chunk = conn.recv()['data']['chunk']
-    # print(chunk)
-    print(chunk['blocks'].__len__())
-
-    while True:
-        receiving = conn.recv()
-        print(receiving)
-        if receiving['t'] == KICK:
-            print("kicked because", receiving['data']['msg'])
-            exit(0)
-        elif receiving['t'] == HEARTBEAT_SERVER:
-            print("heartbeat received")
-            conn.send(ClientHeartbeat())
-
-
-if __name__ == "__main__":
-    test()
+# def test():
+#     conn = ServerConnection("127.0.0.1")
+#
+#     conn.send(ClientHello("test"))
+#     INIT_DATA = conn.recv()
+#
+#     print(INIT_DATA)
+#
+#     conn.send(ClientRequestChunk(0, 0))
+#     chunk = conn.recv()['data']['chunk']
+#     # print(chunk)
+#     print(chunk['blocks'].__len__())
+#
+#     while True:
+#         receiving = conn.recv()
+#         print(receiving)
+#         if receiving['t'] == KICK:
+#             print("kicked because", receiving['data']['msg'])
+#             exit(0)
+#         elif receiving['t'] == HEARTBEAT_SERVER:
+#             print("heartbeat received")
+#             conn.send(ClientHeartbeat())
+#
+#
+# if __name__ == "__main__":
+#     test()

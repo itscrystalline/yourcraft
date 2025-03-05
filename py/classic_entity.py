@@ -1,7 +1,5 @@
 from entities import Entity
 import classic_component
-import classic_handler
-import dataclasses
 
 class Player(Entity):
     player_id = None
@@ -13,3 +11,4 @@ class Player(Entity):
         self.addComponent("acceleration",classic_component.Acceleration2D())
         self.addComponent("inventory",classic_component.Inventory())
         self.addComponent("selectedSlot",classic_component.SelectedSlot())
+        self.addComponent("health",classic_component.Health())
